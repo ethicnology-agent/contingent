@@ -24,13 +24,20 @@
     // external_directory gate egalement les chemins detectes dans de nombreuses
     // commandes shell. Les repertoires entiers sont refuses car le controle se
     // fait sur un glob de parent, pas necessairement sur le fichier exact.
+    //
+    // Un "*" couvre plusieurs segments : le refus de ~/.local/share/opencode/*
+    // atteint donc aussi plans/. Il doit etre suivi d'une re-autorisation
+    // etroite, sinon l'edition de plans autorisee a l'agent plan est morte —
+    // c'etait le cas, et le refus se declenchait sans que rien ne le signale.
+    // auth.json reste couvert par le refus. Voir docs/decisions/0002.
     "external_directory": {
       "*": "ask",
       "~/.ssh/*": "deny",
       "~/.gnupg/*": "deny",
       "~/.aws/*": "deny",
       "~/.config/gh/*": "deny",
-      "~/.local/share/opencode/*": "deny"
+      "~/.local/share/opencode/*": "deny",
+      "~/.local/share/opencode/plans/*": "allow"
     },
     "bash": "ask"
   },

@@ -35,6 +35,10 @@ after):
   `~/.config/gh`, and OpenCode's own `auth.json` directory (the only
   permission key documented to also gate many shell commands, not just the
   `read`/`edit`/`grep` tools).
+- Because a `*` in these patterns spans several path segments, the deny on
+  `~/.local/share/opencode/*` must be followed by a narrow re-allow of
+  `~/.local/share/opencode/plans/*`, or `plan`'s own fallback plan directory
+  becomes unreachable. `auth.json` stays denied.
 
 ## Alternatives considered
 
@@ -66,6 +70,16 @@ Negative / known limits:
   commands.
 - `question: allow` had to be added explicitly to non-default agents; OpenCode
   built-ins allow it, custom-named agents default to deny.
+- **A session-scoped blanket allow does not override this file.** The resolved
+  ruleset observed at runtime begins with a session-level
+  `{permission: "*", pattern: "*", action: "allow"}` entry that is absent from
+  `opencode debug config`; since evaluation is `findLast`, every rule declared
+  here comes after it and wins. Per-request "always" approvals behave the
+  opposite way — they land in the request's `approved` list, which is
+  concatenated *after* the ruleset, so they do take effect. Granting broad
+  session permissions therefore does not silence prompts for anything
+  explicitly configured, and that asymmetry is upstream behavior, not
+  something this file can change.
 - The notification exception only permits the `notify` subcommand. It cannot
   invoke the SSH-agent proxy mode or arbitrary shell commands; its arguments
   are rendered as terminal OSC 777 notification text.
@@ -81,6 +95,37 @@ Negative / known limits:
 - A real bash command triggered an actual `permission.asked` event with
   `action=ask`, confirmed in `opencode`'s own log
   (`~/.local/share/opencode/log/opencode.log`).
+- **Every `deny` rule was exercised for real**, which had never been done: the
+  same log showed 22 708 `bash`, 2 024 `read` and 1 171 `external_directory`
+  evaluations with *zero* `deny` outcomes, meaning the security-relevant half
+  of this file had only ever been checked as configuration. Each was then
+  triggered deliberately and returned `PermissionDeniedError`: `read` on a
+  throwaway `.env` and `.env.local`, and `external_directory` on
+  `~/.aws/…`, `~/.ssh/…`, `~/.gnupg/…`, `~/.config/gh/…` — all four using
+  deliberately non-existent filenames, so a missing deny would have surfaced
+  as `ENOENT` instead and no real secret could be read either way.
+- **The `*.env.example` exception was confirmed not to be shadowed** by the
+  `*.env.*` deny that precedes it, which is the same last-match-wins ordering
+  the plans re-allow relies on.
+- **A `*` spans multiple path segments**: a request for
+  `/tmp/opencode/bull-payjoin-fix/lib/core/payjoin/*` matched the rule
+  `/tmp/opencode/*`. This is why the `~/.local/share/opencode/*` deny reached
+  `plans/` too, and it was confirmed directly: reading
+  `~/.local/share/opencode/plans/<nonexistent>.md` was denied before the fix.
+  OpenCode itself relies on the same ordering, re-allowing
+  `~/.local/share/opencode/tool-output/*` after a user deny.
+
+- The re-allow **resolves** correctly: a fresh `opencode debug config` lists
+  `~/.local/share/opencode/plans/*: allow` after the parent `deny`, which is
+  the ordering the fix depends on.
+
+**Not verified**: the re-allow's runtime effect. OpenCode does not hot-reload
+its configuration, so the rule cannot be *exercised* in the session that
+introduced it — only its resolution was confirmed. Note that resolution itself
+is not guaranteed either: while auditing this, `~/.config/opencode` turned out
+to be a stale copy rather than the symlink the README prescribes, so nothing
+committed here reached the running agent at all. `tests/check-coherence.py` now
+fails on that case.
 - The permission-pattern semantics (last match wins, `~` expansion, simple
   globs not glob-globs) were cross-checked against OpenCode's published
   `/docs/permissions/` page, not assumed from a bundled skill summary alone —
