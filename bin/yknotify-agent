@@ -84,8 +84,10 @@ def _tty_par_stat(pid: int) -> str | None:
         return None
     if tty_nr == 0:
         return None
-    major = (tty_nr >> 8) & 0xFF
-    # MKDEV : le minor occupe les bits 0-7 et 20-31.
+    # MKDEV : le major occupe les bits 8-19, le minor les bits 0-7 et 20-31.
+    # Masquer le major sur 8 bits seulement confondait 136 avec tout major
+    # congruent a 136 modulo 256 (0x188, 0x288, ...), donc un faux /dev/pts.
+    major = (tty_nr >> 8) & 0xFFF
     minor = (tty_nr & 0xFF) | ((tty_nr >> 20) << 8)
     return f"/dev/pts/{minor}" if major == 136 else None
 
@@ -479,7 +481,14 @@ def servir(client: socket.socket, amont: str) -> None:
 
     with client, haut:
         while True:
-            requete = lire_trame(client)
+            # DELAI_CLIENT borne cette lecture : un client qui garde la
+            # connexion ouverte sans rien demander leve TimeoutError. Sans ce
+            # garde l'exception remontait au thread, ou seul le /dev/null de
+            # stderr la rendait invisible.
+            try:
+                requete = lire_trame(client)
+            except (OSError, TimeoutError):
+                return
             if not requete:
                 return
             attend_touch = False
@@ -862,8 +871,16 @@ def main(argv: list[str]) -> int:
 
     if commande == "notify":
         if len(argv) < 4:
+            print("yknotify: notify exige <titre> <corps> [pid]", file=sys.stderr)
             return 2
-        cible = int(argv[4]) if len(argv) > 4 else os.getppid()
+        if len(argv) > 4:
+            try:
+                cible = int(argv[4])
+            except ValueError:
+                print(f"yknotify: pid invalide ({argv[4]!r})", file=sys.stderr)
+                return 2
+        else:
+            cible = os.getppid()
         ok = notifier(argv[2], argv[3], cible)
         print(f"tty {trouver_tty(cible)} — {'envoyé' if ok else 'échec'}")
         return 0 if ok else 1
