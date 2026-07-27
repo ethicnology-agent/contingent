@@ -18,6 +18,7 @@ bootstrap script works until one has actually been built and tested.
 | [0006](0006-git-history-policy.md) | Fixup/amend history policy |
 | [0007](0007-review-oriented-delivery.md) | Review-oriented commit and PR slicing |
 | [0008](0008-supply-chain-pinning.md) | Pinning plugin and dependency versions |
+| [0009](0009-anthropic-openai-fallback.md) | Falling back to OpenAI on an Anthropic quota error |
 
 ## Status values
 
