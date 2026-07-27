@@ -24,9 +24,12 @@ fine string-wise but would fail at the first real fallback attempt.
 
 - Pin the Anthropic auth plugin to an explicit, reviewed version:
   `@ex-machina/opencode-anthropic-auth@1.8.1`.
-- Keep `@opencode-ai/plugin`/`@opencode-ai/sdk` (dev dependencies used only
-  for typechecking plugins locally) aligned to the actual installed OpenCode
-  version (`1.18.5`), bumped deliberately in its own commit, not silently.
+- Keep `@opencode-ai/plugin` aligned to the actual installed OpenCode version,
+  bumped deliberately in its own commit, not silently. It is declared under
+  `dependencies` because the plugins import its types directly;
+  `@opencode-ai/sdk` is not a direct entry at all — it arrives as a dependency
+  of `@opencode-ai/plugin` and is pinned transitively by the lockfile, which
+  is why the lockfile is the thing that actually has to be committed.
 - Commit `package.json` **and** `package-lock.json` to this repo (an earlier
   `.gitignore` excluded both, which would have left a fresh clone with no
   way to reproducibly restore plugin types).
@@ -66,10 +69,17 @@ Negative:
 
 - Version bumps are now a manual, deliberate action (a good thing for
   security, a small amount of extra maintenance).
-- `npm`/`node` (≥ 22.22.2 for the packages actually used here) are required
-  for `typecheck`, even though OpenCode itself can run plugins without a
-  local Node/npm install at all — this is purely a development-time
-  requirement, not a runtime one.
+- `node` is required for `typecheck`, even though OpenCode itself can run
+  plugins without a local Node install at all — this is purely a
+  development-time requirement, not a runtime one. A standalone `npm` is *not*
+  required: `corepack` provisions the exact `npm` named in `packageManager`,
+  so `corepack npm ci` and `corepack npm run typecheck` work on a machine with
+  no `npm` on `PATH`. Measured on a machine where `npm`, `npx`, `pnpm`, `yarn`
+  and `bun` were all absent and only `corepack` and `node` were present.
+- The declared `engines.node` (`>= 22.22.2`, inherited from a transitive
+  dependency) is stricter than what `typecheck` actually needs: it passes on
+  node 20.19.2, with `EBADENGINE` warnings during install. Treat the warnings
+  as a signal to upgrade, not as a failed gate.
 
 ## Evidence
 
@@ -87,6 +97,16 @@ Negative:
 - `npm run typecheck` was run for real against the pinned TypeScript version
   and passed after fixing the type issues above; this is re-runnable from
   `opencode/` in this repo.
+- **The drift this ADR exists to prevent recurred and was caught by audit, not
+  by tooling.** The pin sat at `1.18.5` while the installed binary had moved to
+  `1.18.7` — the same failure mode as the original `1.18.1` vs `1.18.5` gap.
+  Realigning it was verified end to end: `corepack npm install` regenerated the
+  lockfile to `1.18.7` for both `@opencode-ai/plugin` and its transitive
+  `@opencode-ai/sdk`, a `rm -rf node_modules` followed by `corepack npm ci`
+  restored the tree reproducibly from that lockfile, and `typecheck` passed at
+  each step. `tests/check-coherence.py` now compares the pin against
+  `opencode --version` so the next drift fails a check instead of waiting for
+  a reader.
 - `opencode.jsonc` was validated against the officially published JSON Schema
   (`https://opencode.ai/config.json`) after every change, not just visually
   inspected.

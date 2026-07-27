@@ -5,9 +5,12 @@ installation step and no live machine state required.
 
 Verifies that what the committed files ASSERT matches what actually exists
 in the repo: Git aliases referenced in prose, skill names referenced in
-prose, prompt files pointed to by opencode.jsonc, and basic syntax of the
-Python/TypeScript sources. None of this touches the network by default;
-schema/model checks are skipped (not failed) if unreachable.
+prose, prompt files pointed to by opencode.jsonc, version pinning coherence,
+and basic syntax of the Python/TypeScript sources.
+
+Checks that depend on the network or on the installed `opencode` binary are
+skipped rather than failed when unavailable, so a fresh clone stays verifiable
+with no installation step.
 
 This is not a substitute for the behavioral tests described in the ADRs
 under docs/decisions/ (autosquash-without-editor, proxy race conditions,
@@ -157,6 +160,48 @@ try:
                     "" if cfg[cle] in connus else "absent du catalogue")
 except Exception as e:
     OK.append(f"vérification des modèles sautée ({type(e).__name__}: {e})")
+
+# --- 4b. Le pin du SDK suit-il l'OpenCode reellement installe ? -------------
+# La derive que ADR-0008 existe pour empecher s'est reproduite en silence
+# (pin 1.18.5, binaire 1.18.7) et n'a ete vue qu'a la relecture. Skippe, jamais
+# echoue, si le binaire est absent : un clone frais doit rester verifiable.
+def version_opencode() -> str:
+    try:
+        r = subprocess.run(["opencode", "--version"], capture_output=True,
+                           text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    m = re.search(r"\d+\.\d+\.\d+", r.stdout or "")
+    return m.group(0) if m else ""
+
+
+pin = ""
+try:
+    pkg = json.loads(lire("opencode/package.json") or "{}")
+    pin = (pkg.get("dependencies") or {}).get("@opencode-ai/plugin", "")
+    installe = version_opencode()
+    if not pin:
+        verdict(False, "@opencode-ai/plugin epingle dans package.json", "absent")
+    elif not installe:
+        OK.append("comparaison au binaire opencode sautee (opencode introuvable)")
+    else:
+        verdict(pin == installe,
+                f"pin @opencode-ai/plugin ({pin}) == opencode installe ({installe})",
+                "" if pin == installe else "derive : voir docs/decisions/0008")
+except json.JSONDecodeError as e:
+    verdict(False, "opencode/package.json parse en JSON valide", str(e))
+
+# Le lock doit refleter le pin, sinon `npm ci` reconstruit autre chose.
+try:
+    lock = json.loads(lire("opencode/package-lock.json") or "{}")
+    verrouille = ((lock.get("packages") or {}).get("node_modules/@opencode-ai/plugin")
+                  or {}).get("version", "")
+    if pin:
+        verdict(verrouille == pin,
+                f"package-lock.json verrouille @opencode-ai/plugin sur le pin ({pin})",
+                "" if verrouille == pin else f"le lock dit {verrouille or 'rien'}")
+except json.JSONDecodeError as e:
+    verdict(False, "opencode/package-lock.json parse en JSON valide", str(e))
 
 # --- 5. Syntax checks on the repo's own scripts -----------------------------
 py_script = ROOT / "bin" / "yknotify-agent"
