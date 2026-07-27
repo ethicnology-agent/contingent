@@ -5,12 +5,13 @@ installation step and no live machine state required.
 
 Verifies that what the committed files ASSERT matches what actually exists
 in the repo: Git aliases referenced in prose, skill names referenced in
-prose, prompt files pointed to by opencode.jsonc, version pinning coherence,
-and basic syntax of the Python/TypeScript sources.
+prose, prompt files pointed to by opencode.jsonc, relative Markdown links,
+version pinning coherence, permission rules that cannot fire, and basic
+syntax of the Python/TypeScript sources.
 
-Checks that depend on the network or on the installed `opencode` binary are
-skipped rather than failed when unavailable, so a fresh clone stays verifiable
-with no installation step.
+Checks that depend on the network or on live machine state (the installed
+`opencode` binary, `~/.config/opencode`) are skipped rather than failed when
+unavailable, so a fresh clone stays verifiable with no installation step.
 
 This is not a substitute for the behavioral tests described in the ADRs
 under docs/decisions/ (autosquash-without-editor, proxy race conditions,
@@ -202,6 +203,81 @@ try:
                 "" if verrouille == pin else f"le lock dit {verrouille or 'rien'}")
 except json.JSONDecodeError as e:
     verdict(False, "opencode/package-lock.json parse en JSON valide", str(e))
+
+# --- 4c. Chaque plugin charge est-il epingle a une version explicite ? ------
+# C'est l'invariant de securite central de ADR-0008 : sans version, opencode
+# execute ce qui est le plus recent sur npm a chaque demarrage.
+for entree in cfg.get("plugin", []):
+    if not isinstance(entree, str):
+        continue
+    epingle = "@" in entree[1:] if entree.startswith("@") else "@" in entree
+    verdict(epingle, f"plugin '{entree}' epingle a une version",
+            "" if epingle else "aucune version : npm resoudra 'latest' au demarrage")
+
+# --- 4d. Une regle d'agent peut-elle etre annulee par external_directory ? ---
+# L'agent plan avait le droit d'ecrire dans ~/.local/share/opencode/plans/*.md
+# alors que external_directory refusait ~/.local/share/opencode/* : la regle ne
+# pouvait jamais s'appliquer, et rien ne le signalait. Le "*" d'un motif couvre
+# plusieurs segments de chemin, et c'est le DERNIER motif correspondant qui
+# gagne (verifie a l'execution, voir docs/decisions/0002).
+def motif_vers_regex(motif: str) -> re.Pattern[str]:
+    return re.compile("".join(".*" if c == "*" else re.escape(c) for c in motif) + r"\Z")
+
+
+def action_external_directory(chemin: str, regles: dict) -> str:
+    resultat = "ask"
+    for motif, action in regles.items():
+        if motif_vers_regex(motif.replace("~", "~")).match(chemin):
+            resultat = action
+    return resultat
+
+
+regles_ed = (cfg.get("permission", {}) or {}).get("external_directory", {}) or {}
+if isinstance(regles_ed, dict):
+    for nom, ag in cfg.get("agent", {}).items():
+        for cle, bloc in (ag.get("permission", {}) or {}).items():
+            if not isinstance(bloc, dict):
+                continue
+            for motif, action in bloc.items():
+                if action != "allow" or not motif.startswith(("~/", "/")):
+                    continue
+                effective = action_external_directory(motif, regles_ed)
+                verdict(effective != "deny",
+                        f"agent '{nom}': {cle} allow sur '{motif}' n'est pas annule par external_directory",
+                        "" if effective != "deny" else "external_directory refuse ce chemin : regle morte")
+
+# --- 4e. Les liens Markdown relatifs resolvent-ils ? ------------------------
+for md in sorted(ROOT.rglob("*.md")):
+    if ".git/" in str(md) or "node_modules" in str(md):
+        continue
+    texte = md.read_text(encoding="utf-8", errors="replace")
+    for m in re.finditer(r"\[[^\]]*\]\(([^)#\s]+)(?:#[^)]*)?\)", texte):
+        cible = m.group(1)
+        if cible.startswith(("http://", "https://", "mailto:")):
+            continue
+        resolu = (md.parent / cible).resolve()
+        verdict(resolu.exists(),
+                f"lien {md.relative_to(ROOT)} -> {cible}",
+                "" if resolu.exists() else "cible inexistante")
+
+# --- 4f. La config installee est-elle le lien symbolique prescrit ? ---------
+# Une COPIE de opencode/ dans ~/.config/opencode fait diverger silencieusement
+# la machine du depot : tout ce qui est commite ici n'atteint jamais l'agent.
+# Un lien vers un autre clone reste legitime, donc seulement informatif.
+installe = Path.home() / ".config" / "opencode"
+if not installe.exists():
+    OK.append("verification de l'installation sautee (~/.config/opencode absent)")
+elif installe.is_symlink():
+    cible_lien = installe.resolve()
+    attendu = (ROOT / "opencode").resolve()
+    if cible_lien == attendu:
+        OK.append("~/.config/opencode est un lien vers ce depot")
+    else:
+        OK.append(f"~/.config/opencode est un lien vers {cible_lien} (autre clone ?)")
+else:
+    verdict(False, "~/.config/opencode est un lien symbolique, pas une copie",
+            "copie detectee : les commits de ce depot n'atteignent pas l'agent "
+            "(voir la procedure d'installation du README)")
 
 # --- 5. Syntax checks on the repo's own scripts -----------------------------
 py_script = ROOT / "bin" / "yknotify-agent"

@@ -83,6 +83,13 @@ opencode debug config
 
 Restart OpenCode after any config change — it isn't hot-reloaded.
 
+The `ln -s` above matters more than it looks. If `~/.config/opencode` ends up
+a **copy** of `opencode/` instead of a symlink, everything keeps working while
+nothing you commit ever reaches the running agent: fixes land in Git and the
+live config stays frozen at whatever the copy was. `check-coherence.py` fails
+loudly on that case, and passes quietly when the path is absent or points at
+another clone.
+
 ## The YubiKey/security-key notification
 
 If you forward an SSH agent backing a FIDO2/U2F security key into a remote
