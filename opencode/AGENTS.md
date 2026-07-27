@@ -81,3 +81,9 @@ Les commits sont signés par une clé de sécurité : un contact physique est
 demandé dans cet environnement. Un amend ou rebase peut resigner plusieurs
 commits et demander plusieurs contacts. Regroupe les opérations plutôt que de
 multiplier les sollicitations.
+
+Quand une signature échoue — `agent refused operation`, `signing failed`,
+`Permission denied (publickey)` — ce n'est pas un défaut de configuration. Une
+notification bureau demandait un contact et elle n'a pas été vue. Ne pars donc
+pas enquêter sur les clés, le remote, l'agent ou les droits d'accès : dis qu'un
+contact est en attente, et propose de relancer l'opération telle quelle.

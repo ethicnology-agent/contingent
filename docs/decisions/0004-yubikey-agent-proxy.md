@@ -1,6 +1,6 @@
 # ADR-0004: Intercept forwarded SSH-agent requests for security-key notifications
 
-- Status: Accepted, with one explicitly unverified guarantee (see Evidence)
+- Status: Accepted
 - Date: 2026-07-26
 - Owners: ethicnology
 - Applies to: `bin/yknotify-agent`, Linux hosts using a forwarded SSH agent
@@ -112,6 +112,15 @@ Negative / known limits:
   prove the key's policy actually requires touch, nor that `SSH_AGENT_FAILURE`
   specifically means "user declined" rather than "key absent" or "agent
   locked".
+- **An un-touched request is indistinguishable from a misconfiguration at the
+  client.** It surfaces as `sign_and_send_pubkey: signing failed for
+  ED25519-SK … agent refused operation` followed by
+  `Permission denied (publickey)` — wording that invites debugging keys,
+  remotes and access rights when the only thing missing is a touch. The
+  notification this proxy exists to send is precisely what disambiguates it,
+  but only if the user is looking at the window. `opencode/AGENTS.md` therefore
+  instructs agents to report a pending touch instead of investigating, so a
+  missed notification costs one retry rather than a diagnostic detour.
 - The fallback TTY heuristic (`YKNOTIFY_TTY`, set once at shell login) can be
   stale or absent for a shell spawned before this variable was introduced; in
   that case a detached caller with no discoverable TTY simply doesn't notify.
@@ -140,11 +149,20 @@ Verified directly, in this environment:
 - Recovery from a dead proxy socket: killing the daemon and re-running
   `yknotify-agent start` with the stale socket path re-created a working
   proxy at the same path, confirmed via `ssh-add -l`.
+- **A real physical touch on the hardware key, end-to-end through the proxy.**
+  Observed on 2026-07-27, unplanned, during an ordinary `git push`: three
+  `sk-*` sign requests (one `git fetch`, one `ssh -T`, one `git push`) failed
+  with `agent refused operation` while no touch was given, then the same
+  `git push` succeeded unchanged once the user touched the key. No
+  configuration was altered between the failures and the success, which is
+  what makes the touch the only variable. The notifications had been delivered
+  throughout; the user had simply not looked at the window — so this also
+  confirms the notification path fires for genuine hardware sign requests, and
+  not only for the software-key and fake-agent cases listed above.
 
-**Not verified**: an actual physical touch on a hardware security key,
-end-to-end through the corrected proxy. Every test above used either a
-software key or a deliberately failing fake upstream agent to avoid
-requiring physical interaction during automated testing.
+This last item was recorded as **not verified** until 2026-07-27: every other
+test above used either a software key or a deliberately failing fake upstream
+agent, to avoid requiring physical interaction during automated testing.
 
 ## Revisit when
 

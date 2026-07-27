@@ -93,6 +93,11 @@ identifies the calling process, and pushes an OSC 777 desktop notification
 before forwarding the request — so you know *what* is asking for your touch,
 not just that something is.
 
+If a Git or SSH operation fails with `agent refused operation`, `signing
+failed` or `Permission denied (publickey)`, that is almost certainly not a
+misconfiguration — a notification asked for a touch and went unnoticed. Touch
+the key and retry the same command; nothing needs changing.
+
 Full rationale, threat model and what was actually tested:
 [docs/decisions/0004](docs/decisions/0004-yubikey-agent-proxy.md).
 
