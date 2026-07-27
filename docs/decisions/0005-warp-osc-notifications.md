@@ -54,6 +54,15 @@ Negative:
 - `YKNOTIFY_TTY`, being captured once at login, is absent for shells started
   before it was introduced, and doesn't follow a user across multiple
   concurrently open tabs beyond the one it was captured in.
+- **A permission notification cannot name the command that blocked.**
+  Upstream's guard is per tool call, not per pattern: a single pattern still
+  evaluating to `ask` publishes `permission.asked` carrying *every* pattern of
+  the call, and the payload holds no per-pattern action. The notification
+  therefore reports the pattern only when the request carries exactly one —
+  the sole case where it is provably the blocker — and otherwise reports the
+  count. Granting a blanket session approval does not suppress these
+  notifications for the patterns it covers, because a later uncovered pattern
+  in the same call still triggers the ask.
 
 ## Evidence
 
@@ -71,6 +80,20 @@ Negative:
 - The real OpenCode plugin's `question` and `permission.asked` hooks each
   produced a visible desktop notification in a live session, confirmed by
   the user.
+- **`permission.asked` is not published for an already-allowed action.** Read
+  in the compiled OpenCode 1.18.7 `Permission.ask`: each pattern is passed to
+  `evaluate(permission, pattern, ruleset, approved)`, which `findLast`-matches
+  the flattened rules plus the session's `approved` list; `deny` returns an
+  error, `allow` continues, and the function returns *before* `publish` unless
+  some pattern remained `ask`. Blanket session approvals land in `approved`,
+  so they are honoured.
+- **The body used to name an allowed command.** In a live session log,
+  request `per_fa3ba7c8c001b` carried nine bash patterns; the `evaluated`
+  lines show `patterns[0]` (`rtk ls -t …`) resolving to `allow` via a `rtk *`
+  approval, while the actual blockers (`echo …`, `ls -t …`, `tail -12`)
+  appeared later in the array. The plugin displayed `patterns[0]`, so the
+  notification named a command the user had already approved. Fixed by only
+  showing a single-pattern detail.
 
 ## Revisit when
 

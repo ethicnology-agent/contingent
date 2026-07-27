@@ -138,7 +138,21 @@ export const YknotifyPlugin: Plugin = async ({ client, directory, $ }) => {
           permission: string
           patterns?: string[]
         }
-        const detail = demande.patterns?.[0]
+        // Le garde de Permission.ask est par appel d'outil, pas par pattern :
+        // un seul pattern encore en "ask" publie l'evenement avec TOUTE la
+        // liste, y compris les patterns deja autorises. Et la charge utile ne
+        // porte aucune action par pattern, donc le bloqueur est indeterminable.
+        // Afficher patterns[0] nommait donc regulierement une commande deja
+        // autorisee — mesure sur une requete bash de neuf patterns dont le
+        // premier, un "rtk ls ...", etait couvert par une regle "rtk *", alors
+        // que les vrais bloqueurs ("echo ...", "tail -12") suivaient dans la
+        // liste. Un pattern unique est en revanche forcement le bloqueur.
+        const patterns = demande.patterns ?? []
+        const detail = patterns.length === 1
+          ? patterns[0]
+          : patterns.length > 1
+            ? `${patterns.length} commandes`
+            : undefined
         const corps = detail
           ? `validation requise · ${demande.permission} · ${detail}`
           : `validation requise · ${demande.permission}`
