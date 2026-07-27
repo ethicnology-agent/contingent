@@ -501,20 +501,33 @@ def servir(client: socket.socket, amont: str) -> None:
                 return
             if not reponse:
                 return
-            if attend_touch and reponse[0] == SSH_AGENT_FAILURE:
-                try:
-                    notifier("YubiKey — échec agent", "demande de signature SK échouée", pid)
-                except Exception:
-                    pass
             try:
                 ecrire_trame(client, reponse)
             except OSError:
                 return
+            # Meme regle que pour la requete, appliquee au sens retour : une
+            # notification ne doit jamais preceder une trame. `notifier` remonte
+            # jusqu'a 12 parents dans /proc puis ouvre un pts ; en synchrone ici,
+            # elle retardait la remise de la reponse au client. Elle part donc
+            # sur un thread, comme l'annonce de contact.
+            if attend_touch and reponse[0] == SSH_AGENT_FAILURE:
+                threading.Thread(
+                    target=_notifier_sans_erreur,
+                    args=("YubiKey — échec agent",
+                          "demande de signature SK échouée", pid),
+                    daemon=True).start()
 
 
 def _annoncer_sans_erreur(pid: int) -> None:
     try:
         annoncer(pid)
+    except Exception:
+        pass
+
+
+def _notifier_sans_erreur(titre: str, corps: str, pid: int) -> None:
+    try:
+        notifier(titre, corps, pid)
     except Exception:
         pass
 

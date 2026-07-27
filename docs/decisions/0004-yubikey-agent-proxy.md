@@ -90,6 +90,13 @@ process, whereas OSC 777 (see ADR-0005) needs neither.
 - Context-derivation failures (unreadable `.git`, unknown command shape) must
   never suppress or delay forwarding the request; at worst, the notification
   is generic or absent.
+- **No notification sits on the path of a frame, in either direction.** The
+  request direction was always threaded; the response direction was not — the
+  `SSH_AGENT_FAILURE` notification ran synchronously before the failure was
+  handed back to the client, walking up to twelve `/proc` entries and opening a
+  pts first. Both directions now write the frame, then notify on a daemon
+  thread. Stated as an invariant because the asymmetry was not deliberate: the
+  original wording covered only the request.
 
 ## Consequences
 
@@ -137,6 +144,11 @@ Verified directly, in this environment:
 - **Adversarial test**: `.git` replaced with a FIFO in a throwaway repo — the
   upstream agent received the forwarded `SIGN_REQUEST` in 0.2 ms, independent
   of the subsequently-blocked context thread.
+- **The response direction was measured, and had been blocking.** With
+  `notifier` stubbed to take 500 ms and a fake upstream agent returning
+  `SSH_AGENT_FAILURE`, the client received its response in 500.5 ms before the
+  fix and 0.4 ms after, the notification still firing in both cases. The
+  request-direction test above had never covered the return path.
 - 8 concurrent `start` invocations against a cold cache produced exactly one
   daemon and one socket.
 - Runtime files observed at `0700`/`0600` in practice; a `chdir("/")`,
