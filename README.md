@@ -17,7 +17,7 @@ files.
 ```text
 opencode/       OpenCode config, global AGENTS.md, prompts, plugins
 git/            Portable Git behavior (autosquash, rerere, aliases...)
-skills/         decoupage-livraison: commit/PR slicing skill
+skills/         On-demand skills: commit/PR slicing, rtk output filtering
 bin/            yknotify-agent: SSH-agent proxy for security-key context
 docs/decisions/ Why each mechanism exists, and what was actually verified
 tests/          Static checks: does the config say what it does?
@@ -40,6 +40,10 @@ tests/          Static checks: does the config say what it does?
 ## Manual install
 
 Requires Git ≥ 2.44, Python ≥ 3.10, an OpenSSH client, and OpenCode ≥ 1.18.5.
+[rtk](https://github.com/rtk-ai/rtk) ≥ 0.23.0 is optional: with it on
+`PATH`, shell commands are rewritten to filter their output
+([0010](docs/decisions/0010-rtk-command-rewriting.md)); without it, the plugin
+disables itself.
 
 ```bash
 git clone git@github.com:ethicnology/contingent.git
@@ -53,9 +57,10 @@ mkdir -p ~/.config/git
 ln -s "$PWD/git/agentic.gitconfig" ~/.config/git/agentic.gitconfig
 git config --global --add include.path "$HOME/.config/git/agentic.gitconfig"
 
-# Commit/PR slicing skill
+# On-demand skills
 mkdir -p ~/.agents/skills
 ln -s "$PWD/skills/decoupage-livraison" ~/.agents/skills/decoupage-livraison
+ln -s "$PWD/skills/rtk" ~/.agents/skills/rtk
 
 # SSH-agent proxy (optional, see docs/decisions/0004)
 ln -s "$PWD/bin/yknotify-agent" ~/.local/bin/yknotify-agent

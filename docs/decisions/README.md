@@ -19,6 +19,7 @@ bootstrap script works until one has actually been built and tested.
 | [0007](0007-review-oriented-delivery.md) | Review-oriented commit and PR slicing |
 | [0008](0008-supply-chain-pinning.md) | Pinning plugin and dependency versions |
 | [0009](0009-anthropic-openai-fallback.md) | Falling back to OpenAI on an Anthropic quota error |
+| [0010](0010-rtk-command-rewriting.md) | Rewriting shell commands through rtk instead of prompting for it |
 
 ## Status values
 

@@ -11,6 +11,22 @@ modèle de permissions. Pour inspecter un dépôt non approuvé, démarre openco
 avec `OPENCODE_PURE=1 OPENCODE_DISABLE_PROJECT_CONFIG=1`. N'ouvre pas un dépôt
 inconnu avec ses plugins et sa configuration projet activés.
 
+## Commandes shell
+
+Un plugin réécrit les commandes `bash` via `rtk` avant exécution, pour filtrer
+les sorties volumineuses. Ne préfixe donc rien toi-même. La commande affichée
+dans la demande de permission est déjà la commande réécrite : c'est bien elle qui
+s'exécutera.
+
+- Les alias d'historique (`git amend`, `git fixup`, `git ri`) ne sont pas
+  réécrits. Utilise-les tels quels.
+- `npx <outil>` est réécrit en `rtk <outil>`, qui ignore `node_modules/.bin`.
+  Pour un outil installé en dépendance de projet, passe par le script npm.
+- Si une sortie filtrée te semble incomplète, relance avec `rtk proxy <cmd>`
+  avant d'en conclure quoi que ce soit sur le code.
+
+Détail des commandes couvertes et des cas limites : charge la skill `rtk`.
+
 ## Historique git
 
 Un correctif à un commit de cette branche n'est jamais un nouveau commit.
