@@ -1,0 +1,28 @@
+[commit]
+	verbose = true
+[rebase]
+	autosquash = true
+	autostash = true
+	updateRefs = true
+[rerere]
+	enabled = true
+	autoupdate = false
+[pull]
+	rebase = true
+[fetch]
+	prune = true
+[push]
+	autoSetupRemote = true
+[init]
+	defaultBranch = main
+[diff]
+	algorithm = histogram
+	colorMoved = zebra
+[merge]
+	conflictstyle = zdiff3
+[branch]
+	sort = -committerdate
+[alias]
+	fixup = commit --fixup
+	amend = commit --amend --no-edit
+	ri = rebase --autosquash

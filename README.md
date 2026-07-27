@@ -1,0 +1,108 @@
+# contingent
+
+*A portable contingent of well-behaved coding agents.*
+
+Rules, skills, plugins and a small SSH-agent proxy that make [OpenCode](https://opencode.ai)
+agents behave consistently across machines: sane Git history hygiene,
+review-oriented commit slicing, per-role permissions, and a desktop
+notification that tells you *why* your security key is asking for a touch
+before you touch it.
+
+This repo is the config, not a magic installer. Read
+[docs/decisions](docs/decisions/) if you want the reasoning, not just the
+files.
+
+## What's in here
+
+```text
+opencode/       OpenCode config, global AGENTS.md, prompts, plugins
+git/            Portable Git behavior (autosquash, rerere, aliases...)
+skills/         decoupage-livraison: commit/PR slicing skill
+bin/            yknotify-agent: SSH-agent proxy for security-key context
+docs/decisions/ Why each mechanism exists, and what was actually verified
+tests/          Static checks: does the config say what it does?
+```
+
+## What's deliberately NOT in here
+
+- **Personal identity**: your Git name, email, and signing key stay in your
+  own `~/.gitconfig`, included via `git/agentic.gitconfig` (see below).
+  Never commit them here.
+- **Secrets**: no API tokens, no private keys, no `auth.json`. See
+  [docs/decisions/0008](docs/decisions/0008-supply-chain-pinning.md) and the
+  `.gitignore`.
+- **An automated installer.** There is no `bootstrap` script yet. Building
+  one that does atomic releases and rollback safely is real work that hasn't
+  been done or tested. Claiming otherwise here would violate the repo's own
+  [verification rule](opencode/AGENTS.md#vérification). Manual install below,
+  contributions to automate it welcome.
+
+## Manual install
+
+Requires Git ≥ 2.44, Python ≥ 3.10, an OpenSSH client, and OpenCode ≥ 1.18.5.
+
+```bash
+git clone git@github.com:ethicnology/contingent.git
+cd contingent
+
+# OpenCode config — merges with (and overrides) any existing global config
+ln -s "$PWD/opencode" ~/.config/opencode
+
+# Git behavior, kept separate from your identity
+mkdir -p ~/.config/git
+ln -s "$PWD/git/agentic.gitconfig" ~/.config/git/agentic.gitconfig
+git config --global --add include.path "$HOME/.config/git/agentic.gitconfig"
+
+# Commit/PR slicing skill
+mkdir -p ~/.agents/skills
+ln -s "$PWD/skills/decoupage-livraison" ~/.agents/skills/decoupage-livraison
+
+# SSH-agent proxy (optional, see docs/decisions/0004)
+ln -s "$PWD/bin/yknotify-agent" ~/.local/bin/yknotify-agent
+```
+
+Then set your own identity, which must stay **out** of this repo:
+
+```bash
+git config --global user.name "Your Name"
+git config --global user.email "you@example.com"
+git config --global user.signingkey "~/.ssh/your-key.pub"   # if using SSH signing
+```
+
+Verify:
+
+```bash
+cd tests && python3 check-coherence.py
+opencode debug config
+```
+
+Restart OpenCode after any config change — it isn't hot-reloaded.
+
+## The YubiKey/security-key notification
+
+If you forward an SSH agent backing a FIDO2/U2F security key into a remote
+box, `bin/yknotify-agent` sits transparently between the remote client and
+the forwarded agent. When it sees a `SIGN_REQUEST` for an `sk-*` key, it
+identifies the calling process, and pushes an OSC 777 desktop notification
+(supported natively by [Warp](https://docs.warp.dev/terminal/more-features/notifications/))
+before forwarding the request — so you know *what* is asking for your touch,
+not just that something is.
+
+Full rationale, threat model and what was actually tested:
+[docs/decisions/0004](docs/decisions/0004-yubikey-agent-proxy.md).
+
+## Untrusted repositories
+
+OpenCode plugins run inside the OpenCode process, outside its own permission
+model. Don't open a repo you don't trust with its project plugins active:
+
+```bash
+OPENCODE_DISABLE_PROJECT_CONFIG=1 opencode              # keep global plugins
+OPENCODE_PURE=1 OPENCODE_DISABLE_PROJECT_CONFIG=1 opencode  # hostile repo
+```
+
+Details: [docs/decisions/0003](docs/decisions/0003-untrusted-repositories.md).
+
+## License
+
+MIT — see [LICENSE](LICENSE).

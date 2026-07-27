@@ -1,0 +1,18 @@
+# Etat et secrets machine-locaux : ne doivent jamais entrer dans ce depot,
+# meme par erreur d'un futur commit. Voir docs/decisions/0003 et 0008.
+node_modules/
+__pycache__/
+bun.lock
+auth.json
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+*.db
+*.db-*
+*.log
+backups/
+install-state/

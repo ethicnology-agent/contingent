@@ -1,0 +1,163 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // Plugin privilegie : la version est epinglee pour eviter qu'une publication
+  // npm ulterieure s'execute automatiquement avec acces aux jetons OAuth.
+  "plugin": ["@ex-machina/opencode-anthropic-auth@1.8.1"],
+  "enabled_providers": ["anthropic", "openai"],
+  "default_agent": "analyse",
+  "small_model": "anthropic/claude-haiku-4-5",
+
+  // Jamais de partage implicite : une session contient le code de depots prives.
+  "share": "disabled",
+
+  // Les permissions reduisent l'exposition mais ne constituent pas une sandbox.
+  // En particulier, les plugins s'executent dans le processus opencode, hors de
+  // ce modele. Les depots non fiables doivent etre ouverts avec OPENCODE_PURE=1
+  // et OPENCODE_DISABLE_PROJECT_CONFIG=1. Voir docs/decisions/0003.
+  "permission": {
+    "read": {
+      "*": "allow",
+      "*.env": "deny",
+      "*.env.*": "deny",
+      "*.env.example": "allow"
+    },
+    // external_directory gate egalement les chemins detectes dans de nombreuses
+    // commandes shell. Les repertoires entiers sont refuses car le controle se
+    // fait sur un glob de parent, pas necessairement sur le fichier exact.
+    "external_directory": {
+      "*": "ask",
+      "~/.ssh/*": "deny",
+      "~/.gnupg/*": "deny",
+      "~/.aws/*": "deny",
+      "~/.config/gh/*": "deny",
+      "~/.local/share/opencode/*": "deny"
+    },
+    "bash": "ask"
+  },
+  "agent": {
+    "analyse": {
+      "description": "Discussion, analyse approfondie, architecture et diagnostic complexe. Utilise Anthropic en priorite.",
+      "mode": "primary",
+      "model": "anthropic/claude-opus-5",
+      "variant": "high",
+      // Cet agent est la pour raisonner, pas pour implementer — c'est le role
+      // de build. "ask" plutot que "deny" : une frappe suffit si tu veux
+      // vraiment qu'il corrige quelque chose au fil de la discussion.
+      "permission": {
+        "edit": "ask",
+        // Les notifications OSC 777 sont un effet local, borne au sous-
+        // programme `notify`; elles ne justifient pas une validation a chaque
+        // demande tout en laissant les autres commandes sous confirmation.
+        "bash": {
+          "*": "ask",
+          "yknotify-agent notify *": "allow",
+          "timeout 2 yknotify-agent notify *": "allow"
+        },
+        "question": "allow",
+        "task": {
+          "*": "deny",
+          "explore": "allow",
+          "explore-openai": "allow",
+          "scout": "allow"
+        }
+      }
+    },
+    "plan": {
+      "mode": "primary",
+      "model": "anthropic/claude-opus-5",
+      "variant": "high",
+      // {file:...} est resolu relativement a CE fichier : le prompt long vit
+      // dans son propre markdown sans casser la portabilite du depot.
+      "prompt": "{file:./prompts/plan.md}",
+      // Reaffirme le refus d'edition du mode plan : le defaut natif est "ask",
+      // et un "allow" global l'annulerait sinon.
+      "permission": {
+        "bash": "deny",
+        "question": "allow",
+        "task": {
+          "*": "deny",
+          "explore": "allow",
+          "explore-openai": "allow",
+          "scout": "allow"
+        },
+        "edit": {
+          "*": "deny",
+          ".opencode/plans/*.md": "allow",
+          "~/.local/share/opencode/plans/*.md": "allow"
+        }
+      }
+    },
+    "build": {
+      "mode": "primary",
+      "model": "anthropic/claude-sonnet-5",
+      "variant": "medium",
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "question": "allow"
+      }
+    },
+    "explore": {
+      "mode": "subagent",
+      "model": "anthropic/claude-haiku-4-5",
+      "steps": 8,
+      // Lecture seule reelle. La cle "edit" couvre deja write, edit et
+      // apply_patch : l'ancien bloc "tools" faisait double emploi, et il est
+      // deprecie depuis la v1.1.1 au profit de "permission".
+      // bash est refuse : l'exploration passe par read/glob/grep, et un
+      // subagent est le maillon le plus facile a detourner par injection
+      // puisque tu ne relis pas ses actions.
+      "permission": {
+        "edit": "deny",
+        "bash": "deny"
+      }
+    },
+    "analyse-openai": {
+      "description": "Secours d'analyse et de planification lorsque la limite Anthropic est atteinte.",
+      "mode": "primary",
+      "model": "openai/gpt-5.6-sol",
+      "variant": "high",
+      "permission": {
+        "edit": "ask",
+        "bash": {
+          "*": "ask",
+          "yknotify-agent notify *": "allow",
+          "timeout 2 yknotify-agent notify *": "allow"
+        },
+        "question": "allow",
+        "task": {
+          "*": "deny",
+          "explore": "allow",
+          "explore-openai": "allow",
+          "scout": "allow"
+        }
+      }
+    },
+    "build-openai": {
+      "description": "Secours d'implementation lorsque la limite Anthropic est atteinte.",
+      "mode": "primary",
+      "model": "openai/gpt-5.6-terra",
+      "variant": "medium",
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "question": "allow"
+      }
+    },
+    "explore-openai": {
+      "description": "Secours rapide d'exploration en lecture seule.",
+      "mode": "subagent",
+      // Etait "openai/gpt-5.4-mini-fast", inexistant chez models.dev : ce
+      // secours ne pouvait pas demarrer. Le suffixe "-fast" relevait du champ
+      // "variant", distinct de l'identifiant du modele.
+      "model": "openai/gpt-5.4-mini",
+      "steps": 8,
+      // Meme remarque que pour "explore" : "tools" etait deprecie et redondant
+      // avec la cle "edit", qui gate deja write / edit / apply_patch.
+      "permission": {
+        "edit": "deny",
+        "bash": "deny"
+      }
+    }
+  }
+}

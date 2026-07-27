@@ -1,0 +1,875 @@
+#!/usr/bin/env python3
+"""
+yknotify-agent — dit *pourquoi* la YubiKey clignote.
+
+S'intercale entre les clients ssh de la VM et l'agent forwarde depuis l'hote.
+A chaque demande de signature portant sur une cle sk-* (cle de securite ; la
+politique de presence depend de la cle), identifie le processus appelant via
+SO_PEERCRED, en deduit le contexte, et pousse une notification OSC 777 dans le
+terminal de la session.
+
+    Titre : YubiKey — <projet>
+    Corps : <action> · <message>
+
+Le proxy est volontairement transparent : toute anomalie de son cote laisse
+passer la requete sans notifier, pour ne jamais bloquer une signature.
+
+Usage :
+    yknotify-agent start [--upstream <sock>]   demarre/reutilise, affiche le socket
+    yknotify-agent notify <titre> <corps> [pid]  notification manuelle
+    yknotify-agent context [pid]                 diagnostic du contexte
+"""
+
+from __future__ import annotations
+
+import fcntl
+import hashlib
+import os
+import select
+import socket
+import stat
+import struct
+import sys
+import threading
+import time
+
+SSH_AGENTC_REQUEST_IDENTITIES = 11
+SSH_AGENTC_SIGN_REQUEST = 13
+SSH_AGENT_FAILURE = 5
+SSH_AGENT_IDENTITIES_ANSWER = 12
+
+TRAME_MAX = 4 * 1024 * 1024
+FENETRE_ANTI_DOUBLON = 3.0
+MAX_CONNEXIONS = 32
+DELAI_CLIENT = 60.0
+DELAI_SONDE = 5.0
+
+_dernier: tuple[str, float] = ("", 0.0)
+_verrou = threading.Lock()
+_places = threading.BoundedSemaphore(MAX_CONNEXIONS)
+_actives = 0
+_actives_verrou = threading.Lock()
+
+
+# --------------------------------------------------------------------------
+# Terminal : retrouver le pts de la session depuis un pid quelconque
+# --------------------------------------------------------------------------
+
+def _champs_stat(pid: int) -> list[bytes] | None:
+    try:
+        with open(f"/proc/{pid}/stat", "rb") as fh:
+            return fh.read().rpartition(b")")[2].split()
+    except OSError:
+        return None
+
+
+def _tty_par_fd(pid: int) -> str | None:
+    for fd in (2, 1, 0):
+        try:
+            cible = os.readlink(f"/proc/{pid}/fd/{fd}")
+        except OSError:
+            continue
+        if cible.startswith("/dev/pts/"):
+            return cible
+    return None
+
+
+def _tty_par_stat(pid: int) -> str | None:
+    champs = _champs_stat(pid)
+    if not champs or len(champs) < 5:
+        return None
+    try:
+        tty_nr = int(champs[4])
+    except ValueError:
+        return None
+    if tty_nr == 0:
+        return None
+    major = (tty_nr >> 8) & 0xFF
+    # MKDEV : le minor occupe les bits 0-7 et 20-31.
+    minor = (tty_nr & 0xFF) | ((tty_nr >> 20) << 8)
+    return f"/dev/pts/{minor}" if major == 136 else None
+
+
+def parent(pid: int) -> int:
+    champs = _champs_stat(pid)
+    try:
+        return int(champs[1]) if champs else 0
+    except (IndexError, ValueError):
+        return 0
+
+
+def _tty_de_session() -> str | None:
+    """TTY capture par le shell pour les processus detaches.
+
+    Le mtime d'un /dev/pts ne mesure pas son activite. Choisir le plus grand
+    numero pouvait donc envoyer le contexte d'un commit dans un autre onglet.
+    """
+    chemin = os.environ.get("YKNOTIFY_TTY", "")
+    if not chemin.startswith("/dev/pts/"):
+        return None
+    try:
+        st = os.stat(chemin)
+    except OSError:
+        return None
+    return chemin if st.st_uid == os.getuid() and stat.S_ISCHR(st.st_mode) else None
+
+
+def trouver_tty(pid: int, repli: bool = True) -> str | None:
+    """Remonte les parents jusqu'a un pts (un daemon n'a pas de TTY propre)."""
+    for _ in range(12):
+        if pid <= 1:
+            break
+        for methode in (_tty_par_fd, _tty_par_stat):
+            tty = methode(pid)
+            if tty and os.path.exists(tty):
+                return tty
+        pid = parent(pid)
+    return _tty_de_session() if repli else None
+
+
+def assainir(texte: object, limite: int = 150) -> str:
+    """OSC 777 est delimite par ';' : on neutralise aussi BEL et ESC."""
+    plat = " ".join(str(texte).split())
+    plat = plat.replace(";", ",").replace("\x07", "").replace("\x1b", "")
+    plat = "".join(c for c in plat if c.isprintable())
+    return plat[:limite]
+
+
+def notifier(titre: str, corps: str, pid: int) -> bool:
+    tty = trouver_tty(pid)
+    if tty is None:
+        return False
+    sequence = f"\033]777;notify;{assainir(titre)};{assainir(corps)}\007"
+    try:
+        # O_NONBLOCK : si plus personne ne lit le pts, on renonce plutot que
+        # de figer la signature en attente d'un terminal.
+        fd = os.open(tty, os.O_WRONLY | os.O_NONBLOCK)
+        try:
+            os.write(fd, sequence.encode())
+        finally:
+            os.close(fd)
+    except OSError:
+        return False
+    return True
+
+
+# --------------------------------------------------------------------------
+# Contexte : projet / action / message
+# --------------------------------------------------------------------------
+
+def argv_de(pid: int) -> list[str]:
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as fh:
+            brut = fh.read()
+    except OSError:
+        return []
+    return [a.decode(errors="replace") for a in brut.split(b"\0") if a]
+
+
+def cwd_de(pid: int) -> str | None:
+    try:
+        return os.readlink(f"/proc/{pid}/cwd")
+    except OSError:
+        return None
+
+
+def racine_git(depart: str | None) -> str | None:
+    """Remonte jusqu'au depot contenant `depart` (sans lancer git)."""
+    if not depart:
+        return None
+    chemin = os.path.realpath(depart)
+    while True:
+        if os.path.exists(os.path.join(chemin, ".git")):
+            return chemin
+        pere = os.path.dirname(chemin)
+        if pere == chemin:
+            return None
+        chemin = pere
+
+
+def dossier_git(racine: str) -> str | None:
+    """Resout .git, qu'il soit un repertoire ou un fichier (worktree)."""
+    point = os.path.join(racine, ".git")
+    if os.path.isdir(point):
+        return point
+    try:
+        with open(point, "r", encoding="utf-8", errors="replace") as fh:
+            contenu = fh.read().strip()
+    except OSError:
+        return None
+    if contenu.startswith("gitdir:"):
+        cible = contenu.split(":", 1)[1].strip()
+        return cible if os.path.isabs(cible) else os.path.join(racine, cible)
+    return None
+
+
+def message_commit(racine: str, argv: list[str]) -> str:
+    """-m sur la ligne de commande d'abord, sinon COMMIT_EDITMSG."""
+    for i, a in enumerate(argv):
+        if a == "--":
+            break
+        if a in ("-m", "--message") and i + 1 < len(argv):
+            return argv[i + 1]
+        if a.startswith("--message="):
+            return a.split("=", 1)[1]
+        if a.startswith("-m") and len(a) > 2:
+            return a[2:]
+    gitdir = dossier_git(racine)
+    if not gitdir:
+        return ""
+    try:
+        with open(os.path.join(gitdir, "COMMIT_EDITMSG"), encoding="utf-8",
+                  errors="replace") as fh:
+            for ligne in fh:
+                ligne = ligne.strip()
+                if ligne and not ligne.startswith("#"):
+                    return ligne
+    except OSError:
+        pass
+    return ""
+
+
+def branche(racine: str) -> str:
+    gitdir = dossier_git(racine)
+    if not gitdir:
+        return ""
+    try:
+        with open(os.path.join(gitdir, "HEAD"), encoding="utf-8",
+                  errors="replace") as fh:
+            tete = fh.read().strip()
+    except OSError:
+        return ""
+    return tete.rpartition("/")[2] if tete.startswith("ref:") else tete[:8]
+
+
+# Options globales de git qui consomment l'argument suivant : sans cela,
+# `git -c cle=valeur commit` ferait passer « cle=valeur » pour la sous-commande.
+_GIT_OPT_AVEC_VALEUR = {"-C", "-c", "--exec-path", "--git-dir", "--work-tree",
+                        "--namespace", "--super-prefix", "--config-env"}
+
+
+def _index_sous_commande_git(argv: list[str]) -> int | None:
+    i = 1
+    while i < len(argv):
+        a = argv[i]
+        if not a.startswith("-"):
+            return i
+        i += 2 if a in _GIT_OPT_AVEC_VALEUR else 1
+    return None
+
+
+def _positionnels(args: list[str], options_avec_valeur: set[str]) -> list[str]:
+    resultat: list[str] = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--":
+            resultat.extend(args[i + 1:])
+            break
+        if a in options_avec_valeur:
+            i += 2
+            continue
+        if a.startswith("-"):
+            i += 1
+            continue
+        resultat.append(a)
+        i += 1
+    return resultat
+
+
+def _action_git(argv: list[str], racine: str | None) -> tuple[str, str]:
+    """-> (action, message) pour un processus git."""
+    index = _index_sous_commande_git(argv)
+    if index is None:
+        return "git", ""
+    sous = argv[index]
+    args = argv[index + 1:]
+    options_avec_valeur = {
+        "-o", "--push-option", "--receive-pack", "--repo", "--exec",
+        "--recurse-submodules",
+    } if sous == "push" else set()
+    positionnels = _positionnels(args, options_avec_valeur)
+    cible = positionnels[0] if positionnels else ""
+
+    if sous == "commit":
+        action = "commit (amend)" if "--amend" in argv else "commit"
+        return action, message_commit(racine, argv) if racine else ""
+    if sous in ("push", "fetch", "pull"):
+        vers = f" → {cible}" if cible else ""
+        br = branche(racine) if racine else ""
+        return f"{sous}{vers}", br
+    if sous == "tag":
+        return f"tag {cible}".strip(), ""
+    if sous in ("rebase", "cherry-pick", "merge", "revert", "am"):
+        return sous, cible
+    return sous, ""
+
+
+def _hote_ssh(argv: list[str]) -> str:
+    """Extrait la cible d'une ligne de commande ssh/scp/sftp."""
+    sauter = {"-o", "-p", "-P", "-i", "-l", "-F", "-J", "-L", "-R", "-D", "-b",
+              "-c", "-e", "-m", "-O", "-Q", "-S", "-W", "-w"}
+    i = 1
+    while i < len(argv):
+        a = argv[i]
+        if a in sauter:
+            i += 2
+            continue
+        if a.startswith("-"):
+            i += 1
+            continue
+        return a.rpartition("@")[2].partition(":")[0]
+    return ""
+
+
+INTERESSANTS = {"git", "ssh", "scp", "sftp", "rsync", "ssh-keygen", "gh", "jj"}
+
+
+def contexte(pid: int) -> tuple[str, str, str]:
+    """-> (projet, action, message) en remontant la chaine des parents."""
+    chaine: list[tuple[int, list[str]]] = []
+    courant = pid
+    for _ in range(12):
+        if courant <= 1:
+            break
+        argv = argv_de(courant)
+        if argv:
+            chaine.append((courant, argv))
+        courant = parent(courant)
+
+    # cwd du client : c'est lui qui situe le depot.
+    racine = racine_git(cwd_de(pid))
+    if racine is None:
+        for p, _ in chaine:
+            racine = racine_git(cwd_de(p))
+            if racine:
+                break
+
+    projet = os.path.basename(racine) if racine else ""
+    action, message = "", ""
+
+    for p, argv in chaine:
+        nom = os.path.basename(argv[0])
+        if nom.startswith("git-"):
+            nom, argv = "git", ["git", nom[4:]] + argv[1:]
+        if nom not in INTERESSANTS:
+            continue
+        if nom == "git":
+            action, message = _action_git(argv, racine)
+            if action != "git":
+                break
+        elif nom == "ssh-keygen":
+            action = "signature" if "-Y" in argv else "ssh-keygen"
+        elif nom in {"ssh", "scp", "sftp"}:
+            hote = _hote_ssh(argv)
+            action = f"{nom} → {hote}" if hote else nom
+            if not projet:
+                projet = hote or nom
+            break
+        else:
+            action = nom
+            break
+
+    if not projet:
+        cwd = cwd_de(pid)
+        projet = os.path.basename(cwd) if cwd and cwd != os.path.expanduser("~") else "hors dépôt"
+    return projet, action or "signature", message
+
+
+# --------------------------------------------------------------------------
+# Protocole agent
+# --------------------------------------------------------------------------
+
+def recv_exact(sock: socket.socket, n: int, deadline: float | None = None) -> bytes:
+    tampon = b""
+    while len(tampon) < n:
+        if deadline is not None:
+            restant = deadline - time.monotonic()
+            if restant <= 0:
+                raise TimeoutError("delai de lecture depasse")
+            sock.settimeout(restant)
+        bloc = sock.recv(n - len(tampon))
+        if not bloc:
+            return b""
+        tampon += bloc
+    return tampon
+
+
+def lire_trame(sock: socket.socket, deadline: float | None = None) -> bytes:
+    entete = recv_exact(sock, 4, deadline)
+    if len(entete) < 4:
+        return b""
+    taille = struct.unpack(">I", entete)[0]
+    if taille == 0 or taille > TRAME_MAX:
+        return b""
+    return recv_exact(sock, taille, deadline)
+
+
+def ecrire_trame(sock: socket.socket, corps: bytes) -> None:
+    sock.sendall(struct.pack(">I", len(corps)) + corps)
+
+
+def _lire_chaine(donnees: bytes, offset: int) -> tuple[bytes, int]:
+    if offset + 4 > len(donnees):
+        raise ValueError("trame tronquee")
+    n = struct.unpack(">I", donnees[offset:offset + 4])[0]
+    fin = offset + 4 + n
+    if fin > len(donnees):
+        raise ValueError("trame tronquee")
+    return donnees[offset + 4:fin], fin
+
+
+def type_de_cle(corps: bytes) -> str | None:
+    """Type de la cle visee par une SIGN_REQUEST (pour reperer les sk-*)."""
+    try:
+        blob, _ = _lire_chaine(corps, 1)
+        typ, _ = _lire_chaine(blob, 0)
+        return typ.decode(errors="replace")
+    except (ValueError, struct.error):
+        return None
+
+
+def pid_pair(sock: socket.socket) -> int | None:
+    try:
+        brut = sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED,
+                               struct.calcsize("3i"))
+    except (AttributeError, OSError):
+        return None
+    pid, uid, _ = struct.unpack("3i", brut)
+    return pid if pid and uid == os.geteuid() else None
+
+
+def annoncer(pid: int) -> str:
+    """Notifie et renvoie la raison (pour la trace)."""
+    projet, action, message = contexte(pid)
+    corps = f"{action} · {message}" if message else action
+    raison = f"{projet}|{corps}"
+
+    global _dernier
+    with _verrou:
+        precedent, quand = _dernier
+        maintenant = time.monotonic()
+        if precedent == raison and maintenant - quand < FENETRE_ANTI_DOUBLON:
+            return raison
+        _dernier = (raison, maintenant)
+
+    if not notifier(f"YubiKey — {projet}", corps, pid):
+        with _verrou:
+            if _dernier[0] == raison:
+                _dernier = ("", 0.0)
+    return raison
+
+
+# --------------------------------------------------------------------------
+# Relais
+# --------------------------------------------------------------------------
+
+def servir(client: socket.socket, amont: str) -> None:
+    pid = pid_pair(client)
+    try:
+        client.settimeout(DELAI_CLIENT)
+        haut = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        haut.settimeout(DELAI_SONDE)
+        haut.connect(amont)
+        # Une signature SK peut legitimement attendre le contact physique.
+        haut.settimeout(None)
+    except OSError:
+        client.close()
+        return
+
+    with client, haut:
+        while True:
+            requete = lire_trame(client)
+            if not requete:
+                return
+            attend_touch = False
+            if requete[0] == SSH_AGENTC_SIGN_REQUEST and pid:
+                typ = type_de_cle(requete)
+                # Seules les cles sk-* imposent un contact physique.
+                if typ and typ.startswith("sk-"):
+                    attend_touch = True
+            try:
+                # La demande atteint toujours l'agent AVANT le calcul du
+                # contexte. Celui-ci lit .git/HEAD et COMMIT_EDITMSG : un
+                # filesystem bloque ne doit jamais retarder la signature.
+                ecrire_trame(haut, requete)
+                if attend_touch:
+                    threading.Thread(target=_annoncer_sans_erreur, args=(pid,),
+                                     daemon=True).start()
+                reponse = lire_trame(haut)
+            except (OSError, TimeoutError):
+                return
+            if not reponse:
+                return
+            if attend_touch and reponse[0] == SSH_AGENT_FAILURE:
+                try:
+                    notifier("YubiKey — échec agent", "demande de signature SK échouée", pid)
+                except Exception:
+                    pass
+            try:
+                ecrire_trame(client, reponse)
+            except OSError:
+                return
+
+
+def _annoncer_sans_erreur(pid: int) -> None:
+    try:
+        annoncer(pid)
+    except Exception:
+        pass
+
+
+def servir_borne(client: socket.socket, amont: str) -> None:
+    global _actives
+    with _actives_verrou:
+        _actives += 1
+    try:
+        servir(client, amont)
+    finally:
+        with _actives_verrou:
+            _actives -= 1
+        _places.release()
+
+
+def agent_repond(chemin: str, essais: int = 2) -> bool:
+    """Le socket est-il un agent vivant (et non un fichier perime) ?
+
+    Mesure : ~11 ms de latence a travers deux sauts ssh. Le timeout est donc
+    tres large, mais on retente une fois : un faux negatif ici desactive
+    silencieusement le notifieur pour toute la session.
+    """
+    for reste in range(essais, 0, -1):
+        try:
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            deadline = time.monotonic() + DELAI_SONDE
+            s.settimeout(DELAI_SONDE)
+            s.connect(chemin)
+            with s:
+                ecrire_trame(s, bytes([SSH_AGENTC_REQUEST_IDENTITIES]))
+                if lire_trame(s, deadline)[:1] == bytes([SSH_AGENT_IDENTITIES_ANSWER]):
+                    return True
+        except (OSError, IndexError, TimeoutError):
+            pass
+        if reste > 1:
+            time.sleep(0.2)
+    return False
+
+
+def _ouvrir_verrou(chemin: str):
+    flags = os.O_RDWR | os.O_CREAT
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(chemin, flags, 0o600)
+    st = os.fstat(fd)
+    if st.st_uid != os.geteuid() or not stat.S_ISREG(st.st_mode):
+        os.close(fd)
+        raise OSError("lock non fiable")
+    os.fchmod(fd, 0o600)
+    return os.fdopen(fd, "r+")
+
+
+def _lire_memo(chemin: str) -> str:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(chemin, flags)
+    try:
+        st = os.fstat(fd)
+        if st.st_uid != os.geteuid() or not stat.S_ISREG(st.st_mode):
+            return ""
+        return os.read(fd, 4097).decode(errors="replace").strip()[:4096]
+    finally:
+        os.close(fd)
+
+
+def _ecrire_memo(chemin: str, contenu: str) -> None:
+    temporaire = f"{chemin}.{os.getpid()}.tmp"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(temporaire, flags, 0o600)
+    try:
+        os.write(fd, contenu.encode())
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    os.replace(temporaire, chemin)
+
+
+def _fermer_fds_sauf(garder: set[int]) -> None:
+    try:
+        fds = [int(n) for n in os.listdir("/proc/self/fd") if n.isdigit()]
+    except OSError:
+        return
+    for fd in fds:
+        if fd <= 2 or fd in garder:
+            continue
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+
+def surveiller(amont: str, ecoute: str, inode: int, verrou_chemin: str,
+               memo: str) -> None:
+    """Se retire quand l'agent forwarde disparait (fin de session ssh).
+
+    On ne supprime le socket que s'il s'agit encore du notre : si un daemon
+    plus recent a repris le chemin, l'effacer couperait ses clients.
+    """
+    while True:
+        time.sleep(20)
+        with _actives_verrou:
+            aucune_connexion = _actives == 0
+        if not os.path.exists(amont) and aucune_connexion:
+            try:
+                verrou = _ouvrir_verrou(verrou_chemin)
+                with verrou:
+                    fcntl.flock(verrou, fcntl.LOCK_EX)
+                    if os.stat(ecoute).st_ino == inode:
+                        os.unlink(ecoute)
+                        try:
+                            os.unlink(memo)
+                        except OSError:
+                            pass
+            except OSError:
+                pass
+            os._exit(0)
+
+
+def dossier_execution() -> str:
+    base = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    return os.path.join(base, "yknotify")
+
+
+def preparer_dossier_execution() -> str:
+    dossier = dossier_execution()
+    try:
+        os.makedirs(dossier, mode=0o700, exist_ok=True)
+        st = os.lstat(dossier)
+        if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.geteuid():
+            raise OSError("proprietaire ou type inattendu")
+        os.chmod(dossier, 0o700)
+    except OSError as e:
+        detail = e.strerror or str(e)
+        print(f"yknotify: {dossier} inutilisable ({detail})", file=sys.stderr)
+        return ""
+    _nettoyer_stales(dossier)
+    return dossier
+
+
+def _nettoyer_stales(dossier: str) -> None:
+    """Retire sockets et memos sans daemon, sans concurrencer un demarrage."""
+    try:
+        noms = [n for n in os.listdir(dossier) if n.endswith(".sock")]
+    except OSError:
+        return
+    for nom in noms:
+        socket_path = os.path.join(dossier, nom)
+        if agent_repond(socket_path, essais=1):
+            continue
+        base = socket_path[:-5]
+        lock_path = base + ".lock"
+        try:
+            verrou = _ouvrir_verrou(lock_path)
+            with verrou:
+                try:
+                    fcntl.flock(verrou, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    continue
+                if agent_repond(socket_path, essais=1):
+                    continue
+                for cible in (socket_path, base + ".upstream"):
+                    try:
+                        os.unlink(cible)
+                    except OSError:
+                        pass
+        except OSError:
+            continue
+
+
+def resoudre_amont(chemin: str) -> str:
+    """Remonte a l'agent reel si on nous presente un socket de proxy.
+
+    Quand le daemon meurt, les shells qui avaient deja exporte son chemin se
+    retrouvent avec un SSH_AUTH_SOCK mort. Chaque daemon note donc son amont
+    dans un fichier voisin, ce qui permet de repartir de l'agent d'origine au
+    lieu d'echouer — ou pire, d'empiler un proxy sur un proxy.
+    """
+    chemin = os.path.abspath(chemin) if chemin else ""
+    dossier = dossier_execution()
+    for _ in range(4):  # borne : une chaine de memos corrompue ne doit pas boucler
+        if not chemin.startswith(dossier + os.sep):
+            return chemin
+        memo = chemin[:-5] + ".upstream" if chemin.endswith(".sock") else chemin + ".upstream"
+        try:
+            suivant = _lire_memo(memo)
+        except OSError:
+            return chemin
+        if not suivant or suivant == chemin:
+            return chemin
+        chemin = suivant
+    return chemin
+
+
+def demarrer(amont: str) -> str | None:
+    dossier = preparer_dossier_execution()
+    if not dossier:
+        return None
+    empreinte = hashlib.sha256(amont.encode()).hexdigest()[:12]
+    ecoute = os.path.join(dossier, f"agent-{empreinte}.sock")
+    if len(ecoute.encode()) >= 104:
+        print("yknotify: chemin de socket Unix trop long", file=sys.stderr)
+        return None
+
+    # Verrou exclusif sur toute la sequence sonde -> suppression -> bind.
+    # Sans lui, deux shells ouverts en meme temps (ou une sonde qui echoue
+    # transitoirement) menent le second a supprimer le socket VIVANT du
+    # premier, qui continue alors d'ecouter sur une inode orpheline.
+    verrou_chemin = os.path.join(dossier, f"agent-{empreinte}.lock")
+    memo = ecoute[:-5] + ".upstream"
+    try:
+        verrou = _ouvrir_verrou(verrou_chemin)
+    except OSError as e:
+        print(f"yknotify: verrou inutilisable ({e})", file=sys.stderr)
+        return None
+    fcntl.flock(verrou, fcntl.LOCK_EX)
+    # Le fils herite du verrou ; seul le processus initial doit le liberer,
+    # et seulement une fois le socket visible.
+    verrou_proprietaire = os.getpid()
+    try:
+        if agent_repond(ecoute):
+            return ecoute
+        if os.path.exists(ecoute):
+            os.unlink(ecoute)
+
+        lecture, ecriture = os.pipe()
+        if os.fork() != 0:
+            os.close(ecriture)
+            pret, _, _ = select.select([lecture], [], [], 5.0)
+            message = os.read(lecture, 256) if pret else b""
+            os.close(lecture)
+            if message == b"READY":
+                return ecoute
+            detail = message.decode(errors="replace") or "delai de demarrage depasse"
+            print(f"yknotify: daemon non pret ({detail})", file=sys.stderr)
+            return None
+    finally:
+        # Le verrou porte sur la description de fichier partagee par le fork :
+        # c'est le parent qui le libere, une fois le socket visible.
+        if os.getpid() == verrou_proprietaire:
+            fcntl.flock(verrou, fcntl.LOCK_UN)
+            verrou.close()
+
+    try:
+        os.close(lecture)
+        os.setsid()
+        if os.fork() != 0:
+            os.close(ecriture)
+            os._exit(0)
+        os.chdir("/")
+        os.umask(0o077)
+        devnull = os.open(os.devnull, os.O_RDWR)
+        for fd in (0, 1, 2):
+            os.dup2(devnull, fd)
+        if devnull > 2:
+            os.close(devnull)
+
+        serveur = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        serveur.bind(ecoute)
+        os.chmod(ecoute, 0o600)
+        serveur.listen(MAX_CONNEXIONS)
+        inode = os.stat(ecoute).st_ino
+        _ecrire_memo(memo, amont)
+        os.write(ecriture, b"READY")
+        os.close(ecriture)
+        verrou.close()
+        _fermer_fds_sauf({serveur.fileno()})
+    except Exception as e:
+        try:
+            os.write(ecriture, f"ERROR:{type(e).__name__}".encode())
+            os.close(ecriture)
+        except OSError:
+            pass
+        try:
+            os.unlink(ecoute)
+        except OSError:
+            pass
+        os._exit(1)
+
+    threading.Thread(target=surveiller,
+                     args=(amont, ecoute, inode, verrou_chemin, memo),
+                     daemon=True).start()
+    while True:
+        try:
+            conn, _ = serveur.accept()
+        except OSError:
+            time.sleep(0.2)
+            continue
+        if not _places.acquire(blocking=False):
+            conn.close()
+            continue
+        threading.Thread(target=servir_borne, args=(conn, amont),
+                         daemon=True).start()
+
+
+# --------------------------------------------------------------------------
+
+def main(argv: list[str]) -> int:
+    if len(argv) < 2:
+        print(__doc__.strip())
+        return 2
+    commande = argv[1]
+
+    if commande == "start":
+        amont = os.environ.get("SSH_AUTH_SOCK", "")
+        if "--upstream" in argv:
+            i = argv.index("--upstream")
+            if i + 1 >= len(argv):
+                print("yknotify: --upstream exige un chemin", file=sys.stderr)
+                return 2
+            amont = argv[i + 1]
+        # On nous presente peut-etre le socket d'un proxy — shell deja equipe,
+        # ou daemon mort : repartir de l'agent d'origine plutot que d'empiler
+        # un proxy sur un proxy.
+        amont = resoudre_amont(amont)
+        # En cas de refus on n'affiche rien sur stdout : le shell conserve alors
+        # l'agent d'origine. La raison part sur stderr pour rester diagnosticable.
+        if not amont:
+            print("yknotify: SSH_AUTH_SOCK vide", file=sys.stderr)
+            return 1
+        if not agent_repond(amont):
+            print(f"yknotify: agent injoignable sur {amont}", file=sys.stderr)
+            return 1
+        chemin = demarrer(amont)
+        if not chemin:
+            return 1  # rien sur stdout : le shell garde son agent d'origine
+        print(chemin)
+        return 0
+
+    if commande == "notify":
+        if len(argv) < 4:
+            return 2
+        cible = int(argv[4]) if len(argv) > 4 else os.getppid()
+        ok = notifier(argv[2], argv[3], cible)
+        print(f"tty {trouver_tty(cible)} — {'envoyé' if ok else 'échec'}")
+        return 0 if ok else 1
+
+    if commande == "context":
+        cible = int(argv[2]) if len(argv) > 2 else os.getppid()
+        projet, action, message = contexte(cible)
+        print(f"pid     : {cible}")
+        print(f"projet  : {projet}")
+        print(f"action  : {action}")
+        print(f"message : {message}")
+        print(f"tty     : {trouver_tty(cible)}")
+        print(f"→ YubiKey — {projet} / "
+              f"{action + ' · ' + message if message else action}")
+        return 0
+
+    print(__doc__.strip())
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
