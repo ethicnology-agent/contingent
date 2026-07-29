@@ -8,14 +8,16 @@ import type { Plugin } from "@opencode-ai/plugin"
 // tour, et elle ne se declenche que s'il y pense. Ici le declenchement est
 // deterministe et ne depend pas du modele.
 //
-// Trois declencheurs seulement, pour ne pas transformer le canal en bruit :
+// Deux declencheurs seulement, pour ne pas transformer le canal en bruit :
 //   - fin de tour, et uniquement si le tour a dure plus que le seuil
 //   - l'agent pose une question et attend une reponse        (urgent)
-//   - validation reellement demandee, si elle est encore "ask" (urgent)
 //
-// Le cas « question » couvre l'attente explicite d'une reponse. Les demandes
-// d'autorisation utilisent l'evenement runtime permission.asked : le hook
-// historique permission.ask est encore type mais n'est plus declenche en 1.18.5.
+// permission.asked a ete retire : mesure sur un journal reel, 3882 demandes
+// d'autorisation contre 0 appel a l'outil question. Le declencheur etait
+// marque urgent, donc il contournait aussi la periode refractaire, et avec un
+// « bash: ask » global il notifiait quasiment chaque commande. Une demande
+// d'autorisation est deja visible dans le terminal : la notification
+// n'apportait rien et noyait le signal qui compte, le contact YubiKey.
 //
 // session.error est volontairement absent : les erreurs transitoires sont
 // frequentes (le SessionStatus prevoit un etat "retry", et anthropic-fallback
@@ -123,40 +125,6 @@ export const YknotifyPlugin: Plugin = async ({ client, directory, $ }) => {
           void notifier(sessionID, `terminé · ${Math.round(duree / 1000)} s`)
         }, DELAI_IDLE_MS)
         idleEnAttente.set(sessionID, attente)
-        return
-      }
-
-      // Le runtime 1.18.5 emet permission.asked, mais l'union Event du SDK
-      // historique ne l'expose encore que dans les types v2.
-      const runtimeEvent = event as unknown as {
-        type: string
-        properties: Record<string, unknown>
-      }
-      if (runtimeEvent.type === "permission.asked") {
-        const demande = runtimeEvent.properties as unknown as {
-          sessionID: string
-          permission: string
-          patterns?: string[]
-        }
-        // Le garde de Permission.ask est par appel d'outil, pas par pattern :
-        // un seul pattern encore en "ask" publie l'evenement avec TOUTE la
-        // liste, y compris les patterns deja autorises. Et la charge utile ne
-        // porte aucune action par pattern, donc le bloqueur est indeterminable.
-        // Afficher patterns[0] nommait donc regulierement une commande deja
-        // autorisee — mesure sur une requete bash de neuf patterns dont le
-        // premier, un "rtk ls ...", etait couvert par une regle "rtk *", alors
-        // que les vrais bloqueurs ("echo ...", "tail -12") suivaient dans la
-        // liste. Un pattern unique est en revanche forcement le bloqueur.
-        const patterns = demande.patterns ?? []
-        const detail = patterns.length === 1
-          ? patterns[0]
-          : patterns.length > 1
-            ? `${patterns.length} commandes`
-            : undefined
-        const corps = detail
-          ? `validation requise · ${demande.permission} · ${detail}`
-          : `validation requise · ${demande.permission}`
-        void notifier(demande.sessionID, corps, true)
         return
       }
 

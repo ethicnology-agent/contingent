@@ -54,15 +54,21 @@ Negative:
 - `YKNOTIFY_TTY`, being captured once at login, is absent for shells started
   before it was introduced, and doesn't follow a user across multiple
   concurrently open tabs beyond the one it was captured in.
-- **A permission notification cannot name the command that blocked.**
-  Upstream's guard is per tool call, not per pattern: a single pattern still
-  evaluating to `ask` publishes `permission.asked` carrying *every* pattern of
-  the call, and the payload holds no per-pattern action. The notification
-  therefore reports the pattern only when the request carries exactly one —
-  the sole case where it is provably the blocker — and otherwise reports the
-  count. Granting a blanket session approval does not suppress these
-  notifications for the patterns it covers, because a later uncovered pattern
-  in the same call still triggers the ask.
+- **The channel only stays useful while it stays quiet, and permission
+  prompts made it useless.** The plugin originally notified on
+  `permission.asked` as well. Measured on a real log: 3882 permission requests
+  against 0 `question` tool calls. The trigger was marked `urgent`, so it also
+  bypassed the 5 s refractory window, and under a global `bash: ask` it fired
+  on nearly every command. It was removed rather than tuned — an authorization
+  prompt is already visible in the terminal, so the notification added nothing
+  while burying the one signal that cannot be seen any other way, the YubiKey
+  touch. Two triggers remain: end of a turn longer than `YKNOTIFY_SEUIL_MS`,
+  and the `question` tool.
+
+  A mitigation shipped before that removal (reporting the pattern only when a
+  request carried exactly one, since upstream's guard is per tool call and the
+  payload holds no per-pattern action) is therefore gone too. It is kept in
+  Evidence below because it documents upstream behaviour that still holds.
 
 ## Evidence
 
@@ -79,7 +85,14 @@ Negative:
   `YKNOTIFY_TTY` fallback.
 - The real OpenCode plugin's `question` and `permission.asked` hooks each
   produced a visible desktop notification in a live session, confirmed by
-  the user.
+  the user. (`permission.asked` was later removed as a trigger; the
+  measurement stands as evidence that the transport works.)
+- **After the removal**, the two remaining triggers were exercised through the
+  transpiled plugin with a stubbed `$`: `permission.asked` produces no
+  notification at all, the `question` tool still produces
+  `une question t'attend`, and `session.idle` still produces `terminé · N s`
+  when the turn exceeds the threshold — while a short turn under the default
+  30 s threshold correctly stays silent.
 - **`permission.asked` is not published for an already-allowed action.** Read
   in the compiled OpenCode 1.18.7 `Permission.ask`: each pattern is passed to
   `evaluate(permission, pattern, ruleset, approved)`, which `findLast`-matches
