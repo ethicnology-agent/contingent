@@ -17,7 +17,7 @@ files.
 ```text
 opencode/       OpenCode config, global AGENTS.md, prompts, plugins
 git/            Portable Git behavior (autosquash, rerere, aliases...)
-skills/         On-demand skills: commit/PR slicing, rtk output filtering
+skills/         On-demand skills: delivery, rtk, Android and disk/build safety
 bin/            yknotify-agent: SSH-agent proxy for security-key context
 docs/decisions/ Why each mechanism exists, and what was actually verified
 tests/          Static checks: does the config say what it does?
@@ -61,6 +61,8 @@ git config --global --add include.path "$HOME/.config/git/agentic.gitconfig"
 mkdir -p ~/.agents/skills
 ln -s "$PWD/skills/decoupage-livraison" ~/.agents/skills/decoupage-livraison
 ln -s "$PWD/skills/rtk" ~/.agents/skills/rtk
+ln -s "$PWD/skills/appareil-android" ~/.agents/skills/appareil-android
+ln -s "$PWD/skills/espace-disque-builds" ~/.agents/skills/espace-disque-builds
 
 # SSH-agent proxy (optional, see docs/decisions/0004)
 ln -s "$PWD/bin/yknotify-agent" ~/.local/bin/yknotify-agent
@@ -89,6 +91,23 @@ nothing you commit ever reaches the running agent: fixes land in Git and the
 live config stays frozen at whatever the copy was. `check-coherence.py` fails
 loudly on that case, and passes quietly when the path is absent or points at
 another clone.
+
+## Prem providers
+
+The configuration defines two deliberately separate Prem paths:
+
+- `prem/*` is the confidential path. The local Confidential Proxy encrypts
+  requests before sending them to Prem. It requires `PREM_API_KEY`,
+  `CLIENT_KEK`, `PROXY_URL`, and `ENCLAVE_URL` in the environment, then starts
+  with `confidential-proxy start --compat openai --kek "$CLIENT_KEK"`.
+- `prem-router/kimi-k3` uses `router.prem.io` over ordinary TLS. It supports
+  tools, attachments, and reasoning, but Prem can read the prompt. Do not use
+  it for private repository code.
+
+Neither API key nor the KEK belongs in this repository. The current endpoint
+URLs are published at `https://dashboard.prem.io/endpoints.json`. See
+[ADR-0011](docs/decisions/0011-prem-provider-integration.md) for the trust
+boundary and operational limits.
 
 ## The YubiKey/security-key notification
 

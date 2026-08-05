@@ -22,7 +22,7 @@
   // parler directement a gateway.prem.io, qui n'accepte que du ciphertext. Le
   // Confidential Proxy @premai/api-sdk fait le chiffrement cote client et
   // expose une surface OpenAI-compatible sur 127.0.0.1:8787. Voir
-  // docs.prem.io/confidential-proxy et docs/decisions si on en fait une.
+  // docs.prem.io/confidential-proxy et ADR-0011.
   //
    // Pre-requis (a lancer dans un shell persistant, pas ici — le process group
    // de bash est tue a la fin de chaque commande) :
