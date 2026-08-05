@@ -78,7 +78,7 @@ plan_md = lire("opencode/prompts/plan.md")
 gitconfig = lire("git/agentic.gitconfig")
 
 for alias in sorted(set(re.findall(r"`git (\w+)[ `]", agents_md))):
-    if alias in ("commit", "rebase", "push", "pull", "fetch", "status", "config"):
+    if alias in ("commit", "rebase", "push", "pull", "fetch", "status", "config", "log"):
         continue
     m = re.search(rf"^\s*{re.escape(alias)}\s*=", gitconfig, re.M)
     verdict(bool(m), f"alias git '{alias}' cité dans AGENTS.md",

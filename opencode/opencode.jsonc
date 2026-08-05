@@ -1,14 +1,116 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  // Plugin privilegie : la version est epinglee pour eviter qu'une publication
-  // npm ulterieure s'execute automatiquement avec acces aux jetons OAuth.
-  "plugin": ["@ex-machina/opencode-anthropic-auth@1.8.1"],
-  "enabled_providers": ["anthropic", "openai"],
+  // Plugins privilegies : les versions sont epinglees pour eviter qu'une
+  // publication npm ulterieure s'execute automatiquement avec acces aux jetons
+  // OAuth.
+  //
+  // opencode-warp : notifications de fin de tour vers Warp. Audit de la 0.1.7,
+  // aucun appel reseau — le plugin ecrit seulement une sequence OSC 777 sur
+  // /dev/tty, donc tout reste dans le terminal. Il lit en revanche la
+  // conversation via l'API locale et place dans la notification jusqu'a 200
+  // caracteres du dernier prompt et de la derniere reponse, le cwd complet, et
+  // pour une demande de permission la metadata integrale (donc la commande
+  // shell en entier). Inerte si WARP_CLI_AGENT_PROTOCOL_VERSION est absente.
+  "plugin": [
+    "@ex-machina/opencode-anthropic-auth@1.8.1",
+    "@warp-dot-dev/opencode-warp@0.1.7"
+  ],
   "default_agent": "analyse",
   "small_model": "anthropic/claude-haiku-4-5",
 
+  // Prem API chiffre de bout en bout (TEE + XWing) : opencode ne peut pas
+  // parler directement a gateway.prem.io, qui n'accepte que du ciphertext. Le
+  // Confidential Proxy @premai/api-sdk fait le chiffrement cote client et
+  // expose une surface OpenAI-compatible sur 127.0.0.1:8787. Voir
+  // docs.prem.io/confidential-proxy et docs/decisions si on en fait une.
+  //
+   // Pre-requis (a lancer dans un shell persistant, pas ici — le process group
+   // de bash est tue a la fin de chaque commande) :
+   //   openssl rand -hex 32             # -> CLIENT_KEK (tiers toi seul)
+   //   confidential-proxy start --compat openai --kek "$CLIENT_KEK"
+   // avec PREM_API_KEY, CLIENT_KEK, PROXY_URL, ENCLAVE_URL dans l'environnement.
+   // Le CLI ne lit pas CLIENT_KEK seul : --kek est obligatoire. Les deux URLs
+   // courantes viennent de https://dashboard.prem.io/endpoints.json.
+  "provider": {
+    "prem": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Prem",
+      "options": {
+        "baseURL": "http://127.0.0.1:8787/v1",
+        "apiKey": "{env:PREM_API_KEY}",
+        "timeout": 600000,
+        "chunkTimeout": 60000
+      },
+      "models": {
+        "glm-5.2": {
+          "name": "GLM 5.2",
+          "tool_call": true,
+          // Limites non publiees par Prem : estimations prudentes, a verifier.
+          "limit": { "context": 128000, "output": 16384 }
+        },
+        "qwen36-27b": {
+          "name": "Qwen 3.6 27B",
+          "tool_call": true,
+          "attachment": true,
+          "limit": { "context": 128000, "output": 16384 }
+        }
+        // kimi-k3 a ete retire d'ici : GET /v1/models sur le proxy confidentiel
+        // ne le sert pas (qwen36-27b, deepseek-v4-pro, glm-5.2 uniquement).
+        // L'entree n'avait jamais pu fonctionner. Il vit sur prem-router.
+      }
+    },
+
+    // ATTENTION — chemin NON chiffre de bout en bout, contrairement a "prem".
+    // router.prem.io est un service distinct de gateway.prem.io : c'est un
+    // routeur OpenAI-compatible classique, en TLS simple. Prem voit donc les
+    // prompts en clair. A ne pas utiliser pour du code de depot prive.
+    // Verifie : cert CN=prem.io, meme IP Cloudflare que conf-engine.prem.io.
+    //
+    // Cle DEDIEE, distincte de PREM_API_KEY : la cle confidentielle suffixee
+    // _pcci authentifie GET /v1/models sur le routeur mais est refusee sur
+    // /v1/chat/completions ("invalid_api_key", renvoie vers
+    // api.premai.io/settings/api-keys). Ce sont deux credentials separes.
+    //
+    // PREM_ROUTER_API_KEY vit dans ~/.profile, donc n'est lue qu'au demarrage
+    // d'un shell de login : un opencode deja lance avant l'ajout de la
+    // variable resout {env:...} sur une chaine vide et le routeur repond
+    // "invalid_api_key" — symptome identique a une mauvaise cle. Verifier
+    // l'environnement du process avant de soupconner le credential.
+    "prem-router": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Prem Router (non chiffre)",
+      "options": {
+        "baseURL": "https://router.prem.io/v1",
+        "apiKey": "{env:PREM_ROUTER_API_KEY}"
+      },
+      "models": {
+        "kimi-k3": {
+          "name": "Kimi K3",
+          // Verifie par appel reel sur /v1/chat/completions : le modele emet
+          // bien un tool_call OpenAI-compatible (function.arguments en JSON).
+          // Note : les reponses portent un champ "reasoning_content" en plus
+          // de "content", et "content" peut etre vide quand un outil est
+          // appele.
+          "tool_call": true,
+          "attachment": true,
+          "reasoning": true,
+          // context confirme par GET /v1/models (context_length: 1000000).
+          // output non publie par Prem : estimation prudente, a verifier.
+          "limit": { "context": 1000000, "output": 16384 }
+        }
+      }
+    }
+  },
+
   // Jamais de partage implicite : une session contient le code de depots prives.
   "share": "disabled",
+
+  // Reduit le contexte des longues sessions en retirant les anciens resultats
+  // d'outils apres compaction; l'historique persiste dans la base locale.
+  "compaction": {
+    "auto": true,
+    "prune": true
+  },
 
   // Les permissions reduisent l'exposition mais ne constituent pas une sandbox.
   // En particulier, les plugins s'executent dans le processus opencode, hors de

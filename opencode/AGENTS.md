@@ -24,8 +24,38 @@ s'exécutera.
   Pour un outil installé en dépendance de projet, passe par le script npm.
 - Si une sortie filtrée te semble incomplète, relance avec `rtk proxy <cmd>`
   avant d'en conclure quoi que ce soit sur le code.
+- N'écris jamais `sudo rtk <cmd>` : `rtk` n'existe pas dans le PATH de root et
+  la commande échoue avec `sudo: rtk: command not found`. Écris `sudo <cmd>`
+  directement (ex. `sudo /usr/bin/find ...`); le plugin réécrit la commande
+  globale, pas ce qui suit `sudo`.
 
 Détail des commandes couvertes et des cas limites : charge la skill `rtk`.
+
+Le groupe de process est tué à la fin de chaque commande. `nohup … &` n'y
+survit pas — le fichier de log peut même ne jamais être créé. Pour un build,
+un serveur ou un watcher qui doit durer au-delà de l'appel :
+
+```
+setsid nohup <cmd> > /tmp/opencode/x.log 2>&1 < /dev/null & disown
+```
+
+puis consulte le log dans un appel séparé. Une commande longue coupée en vol
+laisse un état partiel, pas une erreur propre : `adb install` interrompu produit
+un paquet à moitié installé, un `git` interrompu un verrou.
+
+## Disque et builds lourds
+
+Cette VM a déjà été rendue inutilisable par l'accumulation silencieuse
+d'artefacts multi-architectures. Avant un build Flutter/Android ou Rust lourd,
+un téléchargement de toolchain, un clone, ou un diagnostic/nettoyage disque :
+charge la skill `espace-disque-builds` et suis ses seuils.
+
+En particulier : vérifie l'espace avant de produire plusieurs Go, limite les
+builds Android debug à `android-arm64`, ne redirige pas les racines de build ou
+de cache, ne défais pas la configuration Cargo/Gradle globale, et ne lance
+jamais `cargo clean` puisque le target Cargo est partagé. N'efface jamais
+plusieurs Go, un cache global ou les artefacts d'un autre checkout sans avoir
+présenté une liste précise et obtenu une validation.
 
 ## Historique git
 
@@ -70,6 +100,34 @@ N'affirme pas qu'une chose fonctionne sans l'avoir exécutée. Si tu ne peux pas
 la vérifier, dis-le explicitement plutôt que de la présenter comme acquise.
 Distingue toujours ce que tu as mesuré de ce que tu supposes.
 
+## Périmètre de la machine
+
+Tu tournes dans une VM Linux sur hôte macOS (`systemd-detect-virt` → `apple`).
+Le matériel — USB, téléphone branché, périphérique Bluetooth — appartient à
+l'hôte, pas à toi. Un périphérique absent de `/dev`, de `lsusb` ou d'un scan
+réseau depuis l'invité n'est donc **pas** un périphérique absent : c'est un
+angle mort.
+
+Avant de bâtir un contournement sur un constat matériel ou réseau, pose-toi
+deux questions : « est-ce que je peux voir ça d'ici ? », puis « l'utilisateur
+peut-il le vérifier côté hôte en une commande ? ». Demander coûte un message ;
+un contournement construit sur un faux négatif coûte une session.
+
+Pour Android et adb en particulier : charge la skill `appareil-android`.
+
+## GitHub en lecture seule
+
+Le token `gh` de cette machine est **volontairement** en lecture seule (PAT
+fine-grained sans droit d'écriture). Une mutation — `gh pr edit`, `gh api` en
+POST/PATCH, mutation GraphQL — échoue avec `Resource not accessible by
+personal access token` : ce n'est ni un défaut de configuration ni quelque
+chose à contourner. Prépare le contenu (titre, corps de PR, commentaire) dans
+un fichier et remets-le à l'utilisateur pour qu'il le colle lui-même.
+
+Bonus si un jour le token écrit : `gh pr edit` échoue sur la requête GraphQL
+Projects-classic dépréciée — passer par une mutation `updatePullRequest`
+directe via `gh api graphql`.
+
 ## Secrets
 
 Les jetons et clés restent hors des dépôts. Les permissions réduisent leur
@@ -81,6 +139,14 @@ Les commits sont signés par une clé de sécurité : un contact physique est
 demandé dans cet environnement. Un amend ou rebase peut resigner plusieurs
 commits et demander plusieurs contacts. Regroupe les opérations plutôt que de
 multiplier les sollicitations.
+
+Pour déterminer si un commit SSH est signé, ne te fie jamais uniquement à
+`git log --show-signature` : il peut afficher `No signature` quand la
+vérification locale SSH n'est pas configurée, même si la signature est bien
+présente. Inspecte d'abord l'objet brut avec `git cat-file -p <commit>` et
+cherche le bloc `gpgsig -----BEGIN SSH SIGNATURE-----`. Sa présence prouve que
+le commit contient une signature ; `gpg.ssh.allowedSignersFile` sert ensuite à
+vérifier l'identité associée, pas la présence de la signature.
 
 Quand une signature échoue — `agent refused operation`, `signing failed`,
 `Permission denied (publickey)` — ce n'est pas un défaut de configuration. Une
