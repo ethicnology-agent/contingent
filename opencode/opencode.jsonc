@@ -18,6 +18,13 @@
   "default_agent": "analyse",
   "small_model": "anthropic/claude-haiku-4-5",
 
+  // Couche d'instructions machine-locale. AGENTS.md est portable et versionne;
+  // AGENTS.local.md contient l'identite et la topologie de la machine (hotes,
+  // ports, utilisateurs, forwards) et n'entre jamais dans ce depot — il est
+  // dans le .gitignore. Verifie : un fichier d'instructions absent ne bloque
+  // pas le demarrage, donc un clone frais fonctionne sans le creer.
+  "instructions": ["AGENTS.local.md"],
+
   // Prem API chiffre de bout en bout (TEE + XWing) : opencode ne peut pas
   // parler directement a gateway.prem.io, qui n'accepte que du ciphertext. Le
   // Confidential Proxy @premai/api-sdk fait le chiffrement cote client et

@@ -18,6 +18,7 @@ behavior from code alone. Read the relevant decision record first:
 - Dependency pinning: [docs/decisions/0008](docs/decisions/0008-supply-chain-pinning.md)
 - Anthropic → OpenAI fallback: [docs/decisions/0009](docs/decisions/0009-anthropic-openai-fallback.md)
 - rtk command rewriting: [docs/decisions/0010](docs/decisions/0010-rtk-command-rewriting.md)
+- Machine-local instructions: [docs/decisions/0012](docs/decisions/0012-machine-local-instructions.md)
 
 Load only the records relevant to the current task, not all of them.
 

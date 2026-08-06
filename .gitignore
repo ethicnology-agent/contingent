@@ -4,6 +4,9 @@ node_modules/
 __pycache__/
 bun.lock
 auth.json
+# Instructions specifiques a la machine (hotes, ports, utilisateurs, forwards),
+# chargees via "instructions" dans opencode.jsonc. Voir docs/decisions/0012.
+AGENTS.local.md
 .env
 .env.*
 !.env.example

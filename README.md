@@ -28,6 +28,11 @@ tests/          Static checks: does the config say what it does?
 - **Personal identity**: your Git name, email, and signing key stay in your
   own `~/.gitconfig`, included via `git/agentic.gitconfig` (see below).
   Never commit them here.
+- **Machine topology**: hostnames, ports, users, SSH forwards and anything
+  else describing one specific machine belong in `opencode/AGENTS.local.md`,
+  which is gitignored and loaded through `instructions` in `opencode.jsonc`.
+  `opencode/AGENTS.md` carries the portable constraint, never the values.
+  See [docs/decisions/0012](docs/decisions/0012-machine-local-instructions.md).
 - **Secrets**: no API tokens, no private keys, no `auth.json`. See
   [docs/decisions/0008](docs/decisions/0008-supply-chain-pinning.md) and the
   `.gitignore`.
