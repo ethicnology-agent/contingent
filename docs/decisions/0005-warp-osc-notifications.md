@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-26
 - Owners: ethicnology
-- Applies to: `bin/yknotify-agent`
+- Applies to: `bin/yknotify-agent`, `bin/yknotify-son`
 - Superseded in part: the OpenCode-side plugin this ADR once shipped is gone;
   see "The OpenCode-side plugin was removed" below.
 
@@ -71,6 +71,51 @@ Negative:
   payload holds no per-pattern action) is therefore gone too. It is kept in
   Evidence below because it documents upstream behaviour that still holds.
 
+## A second, audible channel
+
+A desktop notification is useless in the one situation that matters: the window
+is not being looked at. That is exactly when a touch request goes unnoticed,
+and an unnoticed touch surfaces later as `agent refused operation` or
+`Permission denied (publickey)` — an error that reads like a broken
+configuration and sends the reader off diagnosing keys and remotes.
+
+So `annoncer()` now also plays a short chime. The two channels are
+**independent**: a failure to reach a TTY no longer suppresses the sound, and
+the anti-duplicate window is only released when neither channel succeeded. When
+the signing process is detached, or the tab that captured `YKNOTIFY_TTY` is
+gone, the sound is the only remaining signal.
+
+The machine running the agent has no audio device at all — `/dev/snd` is
+absent. The chime is therefore read locally and streamed to the workstation's
+audio server through `PULSE_SERVER`, which the environment supplies. No port,
+host or socket path appears in this repository (ADR-0012): the forward lives in
+the operator's `~/.ssh/config` and the variable in their shell profile.
+
+`bin/yknotify-son` generates the chime rather than the repo shipping a WAV. A
+26 KB binary is something no review can inspect, whereas thirty lines of
+stdlib synthesis can be read. The file is created on first use and lives under
+`$XDG_DATA_HOME`; `YKNOTIFY_SON=""` disables the channel without touching
+notifications.
+
+### Why not the terminal bell
+
+Tried first, and rejected on measurement. A bare `BEL`, and a `BEL` prepended
+to the OSC 777 sequence, were both confirmed present in the byte stream via a
+captured pty — and neither produced any sound. Warp's audible terminal bell is
+[disabled by default](https://docs.warp.dev/terminal/more-features/audible-bell/).
+Shipping code whose effect depends on a default-off setting in someone else's
+application, with no way to detect from here whether it is on, would have been
+untestable by construction.
+
+### Why not the notification sound
+
+Enabling the system notification sound for the terminal would have cost no code
+at all. It was rejected because `@warp-dot-dev/opencode-warp` emits a
+notification on `session_start`, `prompt_submit` and `stop` — every
+conversation turn would beep. That is the same failure this ADR already records
+for `permission.asked` below: a channel is only useful while it stays quiet.
+A dedicated chime, emitted by nothing else, keeps the signal exclusive.
+
 ## The OpenCode-side plugin was removed
 
 `opencode/plugins/yknotify.ts` reimplemented, for OpenCode, what
@@ -92,6 +137,23 @@ constraint any future re-implementation has to respect.
 
 ## Evidence
 
+- **The audio path was measured end to end before any code was written.**
+  `pactl info` through the forwarded socket reported `Is Local: no`, the
+  workstation's PipeWire 1.4.2 as server, and — notably — **no cookie was
+  required**: forwarding to the Unix socket authenticates by peer credentials,
+  so `~/.config/pulse/cookie` never has to be copied. `paplay` then reported
+  the sink as `suspended: no`, drained the stream, and exited 0; the user
+  confirmed hearing it.
+- **The bell does not ring, and that was proven rather than assumed.** A
+  captured pty showed `b'\x07\x1b]777;notify;T;corps\x07'` with the chime
+  enabled and the same bytes without the leading `0x07` when disabled, exactly
+  two `0x07` in the first case, and an intact OSC sequence in all cases. The
+  notifications arrived; no sound did.
+- **Failure modes of the player are bounded.** With `paplay` simulated absent,
+  `jouer_son()` returns `False` without raising. With a player that never
+  returns, the wait stays bounded by `DELAI_SON` and the process is killed —
+  verified by a stub. `annoncer()` still plays when `notifier()` fails, and an
+  immediate duplicate does not replay the chime.
 - **Upstream emits OSC 777 without the local plugin.** A `opencode run` in a
   throwaway directory, with `yknotify.ts` already removed, produced three
   `]777;notify;warp://cli-agent` payloads from `plugin_version: 0.1.7`:

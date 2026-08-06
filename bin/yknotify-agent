@@ -5,8 +5,11 @@ yknotify-agent — dit *pourquoi* la YubiKey clignote.
 S'intercale entre les clients ssh de la VM et l'agent forwarde depuis l'hote.
 A chaque demande de signature portant sur une cle sk-* (cle de securite ; la
 politique de presence depend de la cle), identifie le processus appelant via
-SO_PEERCRED, en deduit le contexte, et pousse une notification OSC 777 dans le
-terminal de la session.
+SO_PEERCRED, en deduit le contexte, puis annonce sur deux canaux : une
+notification OSC 777 dans le terminal de la session, et un carillon joue sur le
+serveur audio du poste (PULSE_SERVER). Le son compte autant que le visuel : une
+notification n'aide pas quand la fenetre n'est pas regardee, ce qui est
+justement le cas quand un contact physique est attendu.
 
     Titre : YubiKey — <projet>
     Corps : <action> · <message>
@@ -29,6 +32,7 @@ import select
 import socket
 import stat
 import struct
+import subprocess
 import sys
 import threading
 import time
@@ -43,6 +47,19 @@ FENETRE_ANTI_DOUBLON = 3.0
 MAX_CONNEXIONS = 32
 DELAI_CLIENT = 60.0
 DELAI_SONDE = 5.0
+
+# Carillon audible. Une notification visuelle ne sert a rien quand la fenetre
+# n'est pas regardee, et c'est precisement le cas ou un contact est attendu.
+# Cette machine n'a aucun peripherique audio : le fichier est lu ici puis
+# streame vers le serveur audio du poste via PULSE_SERVER, que l'environnement
+# fournit (aucune valeur propre a une machine n'est codee ici, cf. ADR-0012).
+# YKNOTIFY_SON="" desactive le son sans toucher aux notifications.
+SON = os.environ.get(
+    "YKNOTIFY_SON",
+    os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"),
+                 "yknotify", "touch.wav"))
+DELAI_SON = 5.0
+_son_verrou = threading.Lock()
 
 _dernier: tuple[str, float] = ("", 0.0)
 _verrou = threading.Lock()
@@ -153,6 +170,55 @@ def notifier(titre: str, corps: str, pid: int) -> bool:
     except OSError:
         return False
     return True
+
+
+def _generer_son() -> bool:
+    """Cree le carillon a la premiere utilisation, via le generateur voisin.
+
+    realpath est indispensable : l'entree dans PATH est un lien vers le depot,
+    et le generateur vit a cote de la cible du lien, pas a cote du lien.
+    """
+    generateur = os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                              "yknotify-son")
+    if not os.path.exists(generateur):
+        return False
+    try:
+        r = subprocess.run([sys.executable, generateur, SON],
+                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=DELAI_SON)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return r.returncode == 0 and os.path.exists(SON)
+
+
+def jouer_son() -> bool:
+    """Joue le carillon sur le serveur audio du poste.
+
+    Ne doit etre appelee que hors du chemin de relais : `paplay` traverse un
+    tunnel ssh et peut donc bloquer sur le reseau. DELAI_SON borne l'attente et
+    le process est tue au-dela, pour qu'un serveur audio muet ou disparu ne
+    laisse jamais de process en suspens.
+    """
+    if not SON:
+        return False
+    with _son_verrou:
+        if not os.path.exists(SON) and not _generer_son():
+            return False
+    try:
+        p = subprocess.Popen(["paplay", SON], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True)
+    except OSError:
+        return False  # paplay absent : le canal audio est facultatif
+    try:
+        return p.wait(timeout=DELAI_SON) == 0
+    except subprocess.TimeoutExpired:
+        p.kill()
+        try:
+            p.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            pass
+        return False
 
 
 # --------------------------------------------------------------------------
@@ -455,7 +521,13 @@ def annoncer(pid: int) -> str:
             return raison
         _dernier = (raison, maintenant)
 
-    if not notifier(f"YubiKey — {projet}", corps, pid):
+    # Les deux canaux sont independants. Sans TTY joignable — client detache,
+    # onglet ferme — le son reste le seul signal disponible, donc son echec ne
+    # se deduit pas de celui de la notification. La fenetre anti-doublon n'est
+    # relachee que si AUCUN des deux n'a abouti.
+    ok_visuel = notifier(f"YubiKey — {projet}", corps, pid)
+    ok_audio = jouer_son()
+    if not (ok_visuel or ok_audio):
         with _verrou:
             if _dernier[0] == raison:
                 _dernier = ("", 0.0)
