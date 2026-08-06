@@ -154,14 +154,7 @@
       // vraiment qu'il corrige quelque chose au fil de la discussion.
       "permission": {
         "edit": "ask",
-        // Les notifications OSC 777 sont un effet local, borne au sous-
-        // programme `notify`; elles ne justifient pas une validation a chaque
-        // demande tout en laissant les autres commandes sous confirmation.
-        "bash": {
-          "*": "ask",
-          "yknotify-agent notify *": "allow",
-          "timeout 2 yknotify-agent notify *": "allow"
-        },
+        "bash": "ask",
         "question": "allow",
         "task": {
           "*": "deny",
@@ -228,11 +221,7 @@
       "variant": "high",
       "permission": {
         "edit": "ask",
-        "bash": {
-          "*": "ask",
-          "yknotify-agent notify *": "allow",
-          "timeout 2 yknotify-agent notify *": "allow"
-        },
+        "bash": "ask",
         "question": "allow",
         "task": {
           "*": "deny",

@@ -21,10 +21,12 @@ after):
 
 - `plan`: `bash: deny`, `edit` denied except plan files. It reasons, it does
   not touch the tree.
-- `analyse` (the default agent): `edit: ask`, `bash: ask`, except the bounded
-  `yknotify-agent notify *` command (and the plugin's `timeout 2` form), which
-  is allowed. It discusses and diagnoses; a keystroke confirms if it needs to
-  fix something inline, but desktop notifications do not need confirmation.
+- `analyse` (the default agent) and `analyse-openai`: `edit: ask`,
+  `bash: ask`, with no exception. They discuss and diagnose; a keystroke
+  confirms if one needs to fix something inline. The two allowances that once
+  let the local notification plugin shell out to `yknotify-agent notify` were
+  dropped with that plugin (ADR-0005): notifications now come from an upstream
+  plugin that writes OSC 777 itself and never invokes `bash`.
 - `build` / `build-openai`: full `edit`/`bash` — this is the implementation
   role.
 - `explore` / `explore-openai`: `edit: deny`, `bash: deny`. Read-only
@@ -80,9 +82,9 @@ Negative / known limits:
   session permissions therefore does not silence prompts for anything
   explicitly configured, and that asymmetry is upstream behavior, not
   something this file can change.
-- The notification exception only permits the `notify` subcommand. It cannot
-  invoke the SSH-agent proxy mode or arbitrary shell commands; its arguments
-  are rendered as terminal OSC 777 notification text.
+- No agent carries a `bash` allowance any more. The only one that ever existed
+  was the bounded `yknotify-agent notify *` exception, and removing the plugin
+  that needed it (ADR-0005) removed the last hole in the global `bash: ask`.
 
 ## Evidence
 

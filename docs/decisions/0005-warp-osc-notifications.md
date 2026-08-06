@@ -3,14 +3,15 @@
 - Status: Accepted
 - Date: 2026-07-26
 - Owners: ethicnology
-- Applies to: `bin/yknotify-agent`, `opencode/plugins/yknotify.ts`
+- Applies to: `bin/yknotify-agent`
+- Superseded in part: the OpenCode-side plugin this ADR once shipped is gone;
+  see "The OpenCode-side plugin was removed" below.
 
 ## Problem
 
-Both the SSH-agent proxy (ADR-0004) and the OpenCode notification plugin need
-to reach the user's desktop from inside a remote session or a background
-process, without requiring the user to install and run anything extra on
-their own machine.
+Both the SSH-agent proxy (ADR-0004) and OpenCode itself need to reach the
+user's desktop from inside a remote session or a background process, without
+requiring the user to install and run anything extra on their own machine.
 
 ## Decision
 
@@ -70,8 +71,33 @@ Negative:
   payload holds no per-pattern action) is therefore gone too. It is kept in
   Evidence below because it documents upstream behaviour that still holds.
 
+## The OpenCode-side plugin was removed
+
+`opencode/plugins/yknotify.ts` reimplemented, for OpenCode, what
+`@warp-dot-dev/opencode-warp` — already loaded and pinned at 0.1.7 in
+`opencode/opencode.jsonc` — does natively: emit OSC 777 around a turn. Keeping
+both meant maintaining a local plugin *and* granting two `bash` allowances per
+agent so it could shell out to `yknotify-agent notify`, in exchange for a
+duplicated notification.
+
+The plugin and those allowances are therefore gone. `bin/yknotify-agent` is
+untouched: the YubiKey touch notification is the signal this ADR exists for,
+no OpenCode plugin can produce it, and it still runs through the proxy.
+
+What is lost with the local plugin: the `YKNOTIFY_SEUIL_MS` threshold, the 5 s
+refractory window, and the `question`-tool trigger. Upstream's triggers are its
+own and are not tunable from this repo. The reasoning recorded above about
+permission prompts drowning the channel is retained deliberately — it is the
+constraint any future re-implementation has to respect.
+
 ## Evidence
 
+- **Upstream emits OSC 777 without the local plugin.** A `opencode run` in a
+  throwaway directory, with `yknotify.ts` already removed, produced three
+  `]777;notify;warp://cli-agent` payloads from `plugin_version: 0.1.7`:
+  `session_start`, `prompt_submit`, and `stop`. The turn was far shorter than
+  the local plugin's former 30 s threshold and `stop` fired anyway, so upstream
+  applies no equivalent gate.
 - Official Warp documentation for the OSC 9/777 format was read directly
   (not assumed), including the "different app must be focused" caveat that
   applies to Warp's *built-in* triggers — this caveat's applicability to OSC
