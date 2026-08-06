@@ -279,6 +279,34 @@ else:
             "copie detectee : les commits de ce depot n'atteignent pas l'agent "
             "(voir la procedure d'installation du README)")
 
+# --- 4g. Les AUTRES cibles d'installation sont-elles des liens ? ------------
+# Le README prescrit `ln -s` partout, mais seule ~/.config/opencode etait
+# verifiee. Mesure faite sur cette machine : ~/.local/bin/yknotify-agent etait
+# une copie figee au commit initial, donc cinq commits de correctifs de ce
+# fichier n'avaient jamais tourne, et les skills installees dataient d'avant
+# leur reecriture. Aucun signal nulle part. Une copie est silencieuse par
+# nature : c'est precisement ce qui la rend dangereuse.
+prescrits: list[tuple[Path, Path]] = [
+    (Path.home() / ".config" / "git" / "agentic.gitconfig", ROOT / "git" / "agentic.gitconfig"),
+    (Path.home() / ".local" / "bin" / "yknotify-agent", ROOT / "bin" / "yknotify-agent"),
+]
+for nom in sorted(dossiers):
+    prescrits.append((Path.home() / ".agents" / "skills" / nom, ROOT / "skills" / nom))
+
+for lien, cible in prescrits:
+    if not lien.is_symlink() and not lien.exists():
+        OK.append(f"installation de {lien.name} sautee (absente)")
+        continue
+    if not lien.is_symlink():
+        verdict(False, f"~/{lien.relative_to(Path.home())} est un lien, pas une copie",
+                "copie detectee : les commits de ce depot n'atteignent jamais cette cible")
+        continue
+    resolu = lien.resolve()
+    if resolu == cible.resolve():
+        OK.append(f"{lien.name} est un lien vers ce depot")
+    else:
+        OK.append(f"{lien.name} est un lien vers {resolu} (autre clone ?)")
+
 # --- 5. Syntax checks on the repo's own scripts -----------------------------
 py_script = ROOT / "bin" / "yknotify-agent"
 if py_script.exists():
