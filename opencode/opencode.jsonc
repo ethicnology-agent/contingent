@@ -16,7 +16,10 @@
     "@warp-dot-dev/opencode-warp@0.1.7"
   ],
   "default_agent": "analyse",
-  "small_model": "anthropic/claude-haiku-4-5",
+  // small_model sert les taches legeres. Il passe cote OpenAI avec le reste du
+  // volume subi, pour que le quota Anthropic soit consomme par le raisonnement
+  // (analyse, plan, build) et pas par la plomberie.
+  "small_model": "openai/gpt-5.4-mini",
 
   // Couche d'instructions machine-locale. AGENTS.md est portable et versionne;
   // AGENTS.local.md contient l'identite et la topologie de la machine (hotes,
@@ -190,13 +193,23 @@
       // aucun prompt, elle borne les subagents que cet agent peut lancer. Un
       // subagent est le maillon le plus facile a detourner par injection,
       // puisque tu ne relis pas ses actions.
+      //
+      // ROUTAGE CROISE : cet agent raisonne sur Anthropic, donc il explore sur
+      // OpenAI. L'exploration est le poste qui consomme le plus de tokens
+      // d'entree (lecture de fichiers entiers) pour le moins de jugement, et
+      // c'est du volume qu'on ne choisit pas consciemment. Le refus d'"explore"
+      // n'est pas de la defiance envers lui : c'est ce qui rend la repartition
+      // deterministe. Autoriser les deux laisserait le modele choisir, et il
+      // choisirait sans se soucier du quota.
+      //
+      // "scout" a ete retire : il est documente comme subagent natif mais
+      // n'existe pas dans la 1.18.15 installee ("opencode agent list" ne rend
+      // que explore et general). L'entree ne faisait rien.
       "permission": {
         "question": "allow",
         "task": {
           "*": "deny",
-          "explore": "allow",
-          "explore-openai": "allow",
-          "scout": "allow"
+          "explore-openai": "allow"
         }
       }
     },
@@ -214,11 +227,11 @@
       "permission": {
         "bash": "deny",
         "question": "allow",
+        // Meme routage croise que "analyse" : primaire Anthropic, exploration
+        // OpenAI.
         "task": {
           "*": "deny",
-          "explore": "allow",
-          "explore-openai": "allow",
-          "scout": "allow"
+          "explore-openai": "allow"
         },
         "edit": {
           "*": "deny",
@@ -234,7 +247,14 @@
       "permission": {
         "edit": "allow",
         "bash": "allow",
-        "question": "allow"
+        "question": "allow",
+        // Primaire Anthropic, donc exploration OpenAI. Cet agent n'avait
+        // aucune restriction "task" : il heritait du "allow" global et pouvait
+        // donc lancer "general", un subagent a acces complet aux outils.
+        "task": {
+          "*": "deny",
+          "explore-openai": "allow"
+        }
       }
     },
     "explore": {
@@ -257,13 +277,14 @@
       "mode": "primary",
       "model": "openai/gpt-5.6-sol",
       "variant": "high",
+      // Cote miroir du routage croise : primaire OpenAI, donc exploration
+      // Anthropic. Basculer d'un primaire a l'autre deplace du meme coup le
+      // volume des subagents vers l'autre fournisseur.
       "permission": {
         "question": "allow",
         "task": {
           "*": "deny",
-          "explore": "allow",
-          "explore-openai": "allow",
-          "scout": "allow"
+          "explore": "allow"
         }
       }
     },
@@ -275,15 +296,24 @@
       "permission": {
         "edit": "allow",
         "bash": "allow",
-        "question": "allow"
+        "question": "allow",
+        "task": {
+          "*": "deny",
+          "explore": "allow"
+        }
       }
     },
     "explore-openai": {
-      "description": "Secours rapide d'exploration en lecture seule.",
+      // Ce n'est plus un "secours" : c'est l'explorateur par defaut des
+      // primaires Anthropic. Il porte donc le gros du volume de lecture.
+      "description": "Exploration rapide en lecture seule, sur OpenAI.",
       "mode": "subagent",
-      // Etait "openai/gpt-5.4-mini-fast", inexistant chez models.dev : ce
-      // secours ne pouvait pas demarrer. Le suffixe "-fast" relevait du champ
-      // "variant", distinct de l'identifiant du modele.
+      // Le commentaire precedent affirmait que "openai/gpt-5.4-mini-fast"
+      // n'existait pas et que "-fast" relevait du champ "variant". C'est faux :
+      // "opencode models" liste bien gpt-5.4-mini-fast, gpt-5.6-sol-fast,
+      // claude-opus-5-fast, etc. Le suffixe fait partie de l'identifiant. On
+      // reste sur la variante non-fast, mais pour une raison de qualite, pas
+      // parce que l'autre serait invalide.
       "model": "openai/gpt-5.4-mini",
       "steps": 8,
       // Meme remarque que pour "explore" : "tools" etait deprecie et redondant
@@ -292,6 +322,28 @@
         "edit": "deny",
         "bash": "deny"
       }
+    },
+
+    // --- Agents systeme caches ----------------------------------------------
+    // Verifie avec "opencode debug agent <nom>" : sans modele explicite, ces
+    // trois-la n'heritent pas de small_model, ils heritent du modele de la
+    // SESSION. Le defaut etant l'agent "analyse", la compaction d'une longue
+    // session tournait donc sur claude-opus-5 — le tarif le plus cher, sur le
+    // poste le plus volumineux, et entierement invisible.
+    //
+    // Ils ne sont pas selectionnables dans l'interface; on ne peut les
+    // corriger qu'en redefinissant la cle ici.
+    "compaction": {
+      // gpt-5.4 et non -mini : la compaction decide de ce qui survit d'une
+      // session longue. Une compaction mediocre coute plus cher qu'elle
+      // n'economise, puisqu'il faut ensuite reexpliquer le contexte perdu.
+      "model": "openai/gpt-5.4"
+    },
+    "title": {
+      "model": "openai/gpt-5.4-mini"
+    },
+    "summary": {
+      "model": "openai/gpt-5.4-mini"
     }
   }
 }
