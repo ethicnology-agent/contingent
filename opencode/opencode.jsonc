@@ -33,18 +33,30 @@
   //
    // Pre-requis (a lancer dans un shell persistant, pas ici — le process group
    // de bash est tue a la fin de chaque commande) :
-   //   openssl rand -hex 32             # -> CLIENT_KEK (tiers toi seul)
-   //   confidential-proxy start --compat openai --kek "$CLIENT_KEK"
-   // avec PREM_API_KEY, CLIENT_KEK, PROXY_URL, ENCLAVE_URL dans l'environnement.
-   // Le CLI ne lit pas CLIENT_KEK seul : --kek est obligatoire. Les deux URLs
-   // courantes viennent de https://dashboard.prem.io/endpoints.json.
+   //   PREM_API_KEY="$(cat ~/.secrets/prem-api-key)" \
+   //   confidential-proxy start --compat openai \
+   //     --kek "$(cat ~/.secrets/prem-client-kek)"
+   //
+   // PROXY_URL et ENCLAVE_URL restent exportes depuis ~/.profile : ce sont des
+   // URLs publiques, pas des secrets. En revanche PREM_API_KEY et CLIENT_KEK
+   // n'y sont plus et sont fournis a la commande, pas a la session : un secret
+   // exporte dans ~/.profile est lisible par toute commande shell lancee par
+   // un agent. La KEK se genere avec "openssl rand -hex 32" et n'est connue
+   // que de toi. Le CLI ne la lit pas depuis l'environnement : --kek est
+   // obligatoire. Les URLs courantes viennent de
+   // https://dashboard.prem.io/endpoints.json.
   "provider": {
     "prem": {
       "npm": "@ai-sdk/openai-compatible",
       "name": "Prem",
       "options": {
         "baseURL": "http://127.0.0.1:8787/v1",
-        "apiKey": "{env:PREM_API_KEY}",
+        // {file:...} plutot que {env:...} : la cle n'a plus besoin d'exister
+        // dans l'environnement du process, donc elle sort de l'environnement
+        // de chaque commande shell lancee par un agent. Chemin absolu en ~,
+        // supporte et documente, donc le fichier reste portable. Le fichier
+        // est ecrit SANS saut de ligne final : le contenu est inline tel quel.
+        "apiKey": "{file:~/.secrets/prem-api-key}",
         "timeout": 600000,
         "chunkTimeout": 60000
       },
@@ -78,17 +90,19 @@
     // /v1/chat/completions ("invalid_api_key", renvoie vers
     // api.premai.io/settings/api-keys). Ce sont deux credentials separes.
     //
-    // PREM_ROUTER_API_KEY vit dans ~/.profile, donc n'est lue qu'au demarrage
-    // d'un shell de login : un opencode deja lance avant l'ajout de la
-    // variable resout {env:...} sur une chaine vide et le routeur repond
-    // "invalid_api_key" — symptome identique a une mauvaise cle. Verifier
-    // l'environnement du process avant de soupconner le credential.
+    // La cle vit desormais dans ~/.secrets/prem-router-api-key, lue via
+    // {file:...} au chargement de la config. Elle n'est plus dans
+    // l'environnement, donc le piege precedent — un opencode demarre avant
+    // l'export resolvait {env:...} sur une chaine vide et le routeur
+    // repondait "invalid_api_key", symptome identique a une mauvaise cle —
+    // disparait. En revanche la config n'est pas rechargee a chaud : apres
+    // edition du fichier de cle, redemarrer opencode.
     "prem-router": {
       "npm": "@ai-sdk/openai-compatible",
       "name": "Prem Router (non chiffre)",
       "options": {
         "baseURL": "https://router.prem.io/v1",
-        "apiKey": "{env:PREM_ROUTER_API_KEY}"
+        "apiKey": "{file:~/.secrets/prem-router-api-key}"
       },
       "models": {
         "kimi-k3": {
