@@ -43,6 +43,11 @@ Ne pars pas vers le wireless debugging avant cette vérification côté hôte.
 `ADB_SERVER_SOCKET=tcp:h:p` cible un serveur distant déjà lancé. Flutter
 n'honore que `ADB_SERVER_SOCKET`.
 
+Avant `adb` ou `flutter build`, vérifier que `ANDROID_SDK_ROOT` désigne un SDK
+existant et que `$ANDROID_SDK_ROOT/platform-tools` est dans le `PATH`. Le chemin
+concret et la valeur de `ADB_SERVER_SOCKET` sont propres à la machine et doivent
+être lus dans `AGENTS.local.md`, jamais devinés ni recopiés dans un dépôt.
+
 ## Processus longs
 
 Le harness tue le groupe de processus à la fin d'une commande. Pour un build ou

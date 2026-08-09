@@ -57,6 +57,25 @@ jamais `cargo clean` puisque le target Cargo est partagé. N'efface jamais
 plusieurs Go, un cache global ou les artefacts d'un autre checkout sans avoir
 présenté une liste précise et obtenu une validation.
 
+Les clones, worktrees, builds, caches et autres artefacts de travail doivent
+vivre sous `~/debian/`, le volume hôte. N'utilise jamais `/tmp` ou
+`/tmp/opencode` pour un worktree ou un build : `/tmp` est un tmpfs limité.
+Réserve-le aux petits fichiers temporaires et journaux éphémères.
+
+## Tests Android en développement
+
+Pour tester sur un téléphone Android pendant le développement, construis
+uniquement un APK debug pour l'ABI de l'appareil, normalement `arm64-v8a`
+(`--debug --target-platform android-arm64`). Ne lance pas `make android`, la
+chaîne Podman de reproductibilité, une release, ni un build multi-architecture
+sauf demande explicite de l'utilisateur. Ces commandes consomment inutilement
+du temps et de l'espace disque pour un test local.
+
+Avant un build ou une commande `adb`, vérifie que `ANDROID_SDK_ROOT` est défini
+et que `platform-tools` est dans le `PATH`. Le chemin concret du SDK et le
+serveur ADB de cette machine sont dans `AGENTS.local.md`; ne suppose jamais que
+`flutter`, `adb` ou le SDK sont configurés par le shell de l'agent.
+
 ## Historique git
 
 Un correctif à un commit de cette branche n'est jamais un nouveau commit.
@@ -89,10 +108,31 @@ un conflit lors de la réapplication finale. Pour une opération d'historique,
 préfère `git fetch` suivi d'un rebase explicite, et contrôle `git status` avant
 et après.
 
+## Langue des contributions
+
+Nos échanges se font en français ; les artefacts publics, non. Code,
+identifiants, commentaires, messages de commit, titres et descriptions de PR ou
+d'issue, réponses de revue : tout est rédigé en anglais, quelle que soit la
+langue de la conversation. Une chaîne française oubliée dans un test ou un
+commentaire est un motif de rejet en revue.
+
+Avant de rédiger pour un dépôt qui n'est pas le nôtre, lis quelques PR et issues
+déjà fusionnées pour en reprendre les conventions : format des titres, niveau de
+détail des descriptions, ton des commentaires, présence ou non d'un changelog.
+Les standards du projet priment sur nos habitudes.
+
 ## Découpage des commits et des PR
 
 La revue est le goulot d'étranglement, pas l'écriture. Quand tu planifies plus
 d'un commit, ou une PR : charge la skill `decoupage-livraison`.
+
+## Notes de travail
+
+Les plans d'enquête, comptes rendus de tests, listes de pistes et documents de
+travail créés pendant une session restent hors du dépôt. Ne les ajoute jamais à
+un commit ou une PR sans demande explicite de l'utilisateur de les versionner.
+Seule la documentation utilisateur, opératoire ou d'architecture demandée et
+maintenue par le projet mérite d'être committée.
 
 ## Vérification
 
