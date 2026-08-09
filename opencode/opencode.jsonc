@@ -133,10 +133,18 @@
     "prune": true
   },
 
-  // Les permissions reduisent l'exposition mais ne constituent pas une sandbox.
-  // En particulier, les plugins s'executent dans le processus opencode, hors de
-  // ce modele. Les depots non fiables doivent etre ouverts avec OPENCODE_PURE=1
-  // et OPENCODE_DISABLE_PROJECT_CONFIG=1. Voir docs/decisions/0003.
+  // Posture : autorisation par defaut, refus explicite la ou c'est necessaire.
+  // C'est aussi le defaut d'opencode lui-meme ("by default, opencode allows all
+  // operations without requiring explicit approval").
+  //
+  // Le prompt de permission n'etait de toute facon pas une sandbox — les
+  // plugins s'executent dans le processus opencode, hors de ce modele. Les
+  // depots non fiables doivent etre ouverts avec OPENCODE_PURE=1 et
+  // OPENCODE_DISABLE_PROJECT_CONFIG=1. Voir docs/decisions/0003.
+  //
+  // Consequence directe de ce choix : plus rien n'arrete une commande shell
+  // avant son execution. Les seuls garde-fous restants sont les refus etroits
+  // ci-dessous, et ils ne portent que sur des chemins.
   "permission": {
     "read": {
       "*": "allow",
@@ -144,6 +152,8 @@
       "*.env.*": "deny",
       "*.env.example": "allow"
     },
+    "edit": "allow",
+    "bash": "allow",
     // external_directory gate egalement les chemins detectes dans de nombreuses
     // commandes shell. Les repertoires entiers sont refuses car le controle se
     // fait sur un glob de parent, pas necessairement sur le fichier exact.
@@ -153,16 +163,18 @@
     // etroite, sinon l'edition de plans autorisee a l'agent plan est morte —
     // c'etait le cas, et le refus se declenchait sans que rien ne le signale.
     // auth.json reste couvert par le refus. Voir docs/decisions/0002.
+    //
+    // L'ordre compte : opencode applique la DERNIERE regle qui matche, donc le
+    // "*" permissif doit rester en tete et les refus en queue.
     "external_directory": {
-      "*": "ask",
+      "*": "allow",
       "~/.ssh/*": "deny",
       "~/.gnupg/*": "deny",
       "~/.aws/*": "deny",
       "~/.config/gh/*": "deny",
       "~/.local/share/opencode/*": "deny",
       "~/.local/share/opencode/plans/*": "allow"
-    },
-    "bash": "ask"
+    }
   },
   "agent": {
     "analyse": {
@@ -171,11 +183,14 @@
       "model": "anthropic/claude-opus-5",
       "variant": "high",
       // Cet agent est la pour raisonner, pas pour implementer — c'est le role
-      // de build. "ask" plutot que "deny" : une frappe suffit si tu veux
-      // vraiment qu'il corrige quelque chose au fil de la discussion.
+      // de build. Il herite desormais du "allow" global : la separation des
+      // roles tient au prompt et a l'usage, plus a un garde-fou technique.
+      //
+      // La liste "task" reste une restriction volontaire : elle ne genere
+      // aucun prompt, elle borne les subagents que cet agent peut lancer. Un
+      // subagent est le maillon le plus facile a detourner par injection,
+      // puisque tu ne relis pas ses actions.
       "permission": {
-        "edit": "ask",
-        "bash": "ask",
         "question": "allow",
         "task": {
           "*": "deny",
@@ -192,8 +207,10 @@
       // {file:...} est resolu relativement a CE fichier : le prompt long vit
       // dans son propre markdown sans casser la portabilite du depot.
       "prompt": "{file:./prompts/plan.md}",
-      // Reaffirme le refus d'edition du mode plan : le defaut natif est "ask",
-      // et un "allow" global l'annulerait sinon.
+      // Reaffirme le refus d'edition du mode plan. C'est maintenant le seul
+      // agent primaire qui contredit le "allow" global, et c'est le but : un
+      // mode plan qui peut ecrire et lancer des commandes n'est plus un mode
+      // plan.
       "permission": {
         "bash": "deny",
         "question": "allow",
@@ -241,8 +258,6 @@
       "model": "openai/gpt-5.6-sol",
       "variant": "high",
       "permission": {
-        "edit": "ask",
-        "bash": "ask",
         "question": "allow",
         "task": {
           "*": "deny",
