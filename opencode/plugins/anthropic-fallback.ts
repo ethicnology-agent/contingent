@@ -36,10 +36,10 @@ type ReplayablePart =
   | { type: "file"; url: string; mime: string; filename?: string }
 
 const fallbacks: Record<string, Model> = {
-  analyse: { providerID: "openai", modelID: "gpt-5.6-sol" },
+  opus: { providerID: "openai", modelID: "gpt-5.6-sol" },
   plan: { providerID: "openai", modelID: "gpt-5.6-sol" },
-  build: { providerID: "openai", modelID: "gpt-5.6-terra" },
-  explore: { providerID: "openai", modelID: "gpt-5.4-mini" },
+  explore: { providerID: "openai", modelID: "gpt-5.6-luna" },
+  "worker-anthropic": { providerID: "openai", modelID: "gpt-5.6-luna" },
 }
 
 // "Overloaded" est volontairement absent : c'est un 529 transitoire que le
