@@ -19,6 +19,7 @@ behavior from code alone. Read the relevant decision record first:
 - Anthropic → OpenAI fallback: [docs/decisions/0009](docs/decisions/0009-anthropic-openai-fallback.md)
 - rtk command rewriting: [docs/decisions/0010](docs/decisions/0010-rtk-command-rewriting.md)
 - Machine-local instructions: [docs/decisions/0012](docs/decisions/0012-machine-local-instructions.md)
+- Image generation tool: [docs/decisions/0013](docs/decisions/0013-image-generation-tool.md)
 
 Load only the records relevant to the current task, not all of them.
 

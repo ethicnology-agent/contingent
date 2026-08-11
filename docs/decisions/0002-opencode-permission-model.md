@@ -1,7 +1,7 @@
-# ADR-0002: Per-role OpenCode permissions, not a blanket allow
+# ADR-0002: Allow capable primaries, constrain specialized roles
 
 - Status: Accepted
-- Date: 2026-07-26
+- Date: 2026-08-11
 - Owners: ethicnology
 - Applies to: `opencode/opencode.jsonc`
 
@@ -15,28 +15,28 @@ is no separation between "reasoning about code" and "changing code".
 
 ## Decision
 
-Give each agent role the permissions its job actually needs, evaluated with
-OpenCode's documented last-match-wins rule (`"*"` first, specific patterns
-after):
+Use an allow-by-default posture for flagship primary agents, which are expected
+to implement complete tasks without stopping for routine approvals. Constrain
+specialized roles explicitly, evaluated with OpenCode's documented
+last-match-wins rule (`"*"` first, specific rules after):
 
-- `plan`: `bash: deny`, `edit` denied except plan files. It reasons, it does
-  not touch the tree.
-- `analyse` (the default agent) and `analyse-openai`: `edit: ask`,
-  `bash: ask`, with no exception. They discuss and diagnose; a keystroke
-  confirms if one needs to fix something inline. The two allowances that once
-  let the local notification plugin shell out to `yknotify-agent notify` were
-  dropped with that plugin (ADR-0005): notifications now come from an upstream
-  plugin that writes OSC 777 itself and never invokes `bash`.
-- `build` / `build-openai`: full `edit`/`bash` — this is the implementation
-  role.
-- `explore` / `explore-openai`: `edit: deny`, `bash: deny`. Read-only
-  subagents are the easiest link to compromise via injection because their
-  actions aren't reviewed turn by turn.
-- Global `bash: ask`, global `external_directory` keeps its native `ask`
-  default with hard `deny` added for `~/.ssh`, `~/.gnupg`, `~/.aws`,
-  `~/.config/gh`, and OpenCode's own `auth.json` directory (the only
-  permission key documented to also gate many shell commands, not just the
-  `read`/`edit`/`grep` tools).
+- `gpt`, `opus`, and `kimi`: full in-worktree `edit`/`bash`; `doom_loop` is
+  denied and `task` is restricted to the cross-provider explore and worker
+  agents named for that primary.
+- `plan`: `bash` and the mutating `imagegen` tool are denied; `edit` is denied
+  except for plan files; only the read-only OpenAI explorer may be delegated.
+- `explore` / `explore-openai`: wildcard deny followed by read-only tools. They
+  cannot edit, execute shell commands, ask questions, generate images, or
+  launch subagents.
+- `worker-openai` / `worker-anthropic`: wildcard deny followed by the tools
+  needed for a bounded implementation (`read`, search, LSP, skills, `edit`,
+  `bash`). They cannot ask questions, generate images, or launch subagents.
+- Global `imagegen: ask` keeps image generation human-approved for capable
+  primaries. The explicit `plan` denial prevents an approval from turning plan
+  mode into an out-of-tree writer.
+- Global `external_directory` allows ordinary work but hard-denies credential
+  roots: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.config/gh`, `~/.secrets`,
+  `~/.codex`, and OpenCode's own state directory.
 - Because a `*` in these patterns spans several path segments, the deny on
   `~/.local/share/opencode/*` must be followed by a narrow re-allow of
   `~/.local/share/opencode/plans/*`, or `plan`'s own fallback plan directory
@@ -44,11 +44,11 @@ after):
 
 ## Alternatives considered
 
-### Global `allow`, rely on the user reading diffs
+### Ask before every primary edit and shell command
 
-Rejected: it means every subagent, including throwaway `explore` calls, can
-silently write files or run destructive commands. Diff review after the fact
-doesn't prevent exfiltration via `bash cat/curl`.
+Rejected after use: it turns capable implementation agents into confirmation
+loops without creating a sandbox. The trusted-primary boundary is explicit;
+read-only and bounded roles retain deny-by-default permissions.
 
 ### Sandbox / container isolation instead of tool permissions
 
@@ -58,20 +58,23 @@ it does not replace a real sandbox.
 
 ## Consequences
 
-Positive: a compromised or careless `plan`/`explore` turn cannot silently
-mutate the repo or exfiltrate via bash. The default agent (`analyse`) is not
-Build in disguise.
+Positive: primary agents can complete implementation work autonomously, while a
+compromised or careless `plan`/`explore` turn cannot silently mutate the repo or
+execute shell commands. Workers have enough tools to implement their delegation
+but cannot recursively fan out.
 
 Negative / known limits:
 
-- `bash: ask` is not a sandbox. A user who reflexively approves `ask` prompts
-  gets no real protection.
+- `bash: allow` is intentionally not a sandbox. Primary agents and workers are
+  trusted with arbitrary shell execution inside the process and can bypass
+  tool-level `read` rules. Untrusted repositories therefore require the startup
+  flags in ADR-0003.
 - `external_directory` denies are the only ones with partial coverage against
   shell-command path detection; `read`/`edit`/`grep` denies are easily
-  bypassed by `bash cat <path>` since `bash` itself isn't restricted to safe
-  commands.
-- `question: allow` had to be added explicitly to non-default agents; OpenCode
-  built-ins allow it, custom-named agents default to deny.
+  bypassed by shell commands when no external-directory boundary is crossed.
+- Plugins and custom tools execute in the OpenCode process, outside this policy
+  layer. Their own code and subprocess environments are part of the trusted
+  computing base.
 - **A session-scoped blanket allow does not override this file.** The resolved
   ruleset observed at runtime begins with a session-level
   `{permission: "*", pattern: "*", action: "allow"}` entry that is absent from
@@ -82,21 +85,17 @@ Negative / known limits:
   session permissions therefore does not silence prompts for anything
   explicitly configured, and that asymmetry is upstream behavior, not
   something this file can change.
-- No agent carries a `bash` allowance any more. The only one that ever existed
-  was the bounded `yknotify-agent notify *` exception, and removing the plugin
-  that needed it (ADR-0005) removed the last hole in the global `bash: ask`.
 
 ## Evidence
 
-- `opencode debug config` was run against the actual installed OpenCode
-  (1.18.5) and the resolved `permission` block for every agent matched what
-  this file declares (`analyse: bash=ask edit=ask`, `plan: bash=deny`,
-  `build: bash=allow edit=allow`, `explore*: bash=deny edit=deny`).
-- A real `question` tool call from a live session produced the expected
-  desktop notification (see ADR-0005).
-- A real bash command triggered an actual `permission.asked` event with
-  `action=ask`, confirmed in `opencode`'s own log
-  (`~/.local/share/opencode/log/opencode.log`).
+- `opencode debug agent` was run against the installed OpenCode 1.18.16 for the
+  current primary and worker agents. Primaries expose `task`; workers expose
+  `read`/search/LSP/skill/edit/bash but not `task`, `question`, or `imagegen`.
+- The same command confirmed `plan` resolves `bash: deny`, `imagegen: deny`,
+  and only its narrow plan-file edit allowances.
+- `tests/check-coherence.py` schema-validates the config and now asserts that
+  every local custom tool is globally `ask`/`deny`, denied to `plan`, and that
+  `~/.secrets/*` remains denied.
 - **Every `deny` rule was exercised for real**, which had never been done: the
   same log showed 22 708 `bash`, 2 024 `read` and 1 171 `external_directory`
   evaluations with *zero* `deny` outcomes, meaning the security-relevant half
@@ -121,13 +120,10 @@ Negative / known limits:
   `~/.local/share/opencode/plans/*: allow` after the parent `deny`, which is
   the ordering the fix depends on.
 
-**Not verified**: the re-allow's runtime effect. OpenCode does not hot-reload
-its configuration, so the rule cannot be *exercised* in the session that
-introduced it — only its resolution was confirmed. Note that resolution itself
-is not guaranteed either: while auditing this, `~/.config/opencode` turned out
-to be a stale copy rather than the symlink the README prescribes, so nothing
-committed here reached the running agent at all. `tests/check-coherence.py` now
-fails on that case.
+**Not verified in this change**: an attempted runtime read of each newly denied
+credential path. Resolution was checked in a fresh `opencode debug agent`
+process; OpenCode does not hot-reload permission changes into an existing
+session.
 - The permission-pattern semantics (last match wins, `~` expansion, simple
   globs not glob-globs) were cross-checked against OpenCode's published
   `/docs/permissions/` page, not assumed from a bundled skill summary alone —
@@ -137,8 +133,7 @@ fails on that case.
 ## Revisit when
 
 - OpenCode ships real per-tool sandboxing (process or filesystem isolation),
-  which would let `bash: allow` be safe again for non-Build agents.
+  which would reduce the trust currently placed in primaries and workers.
 - A future version changes default permission inheritance between
-  differently-named agents (today, `analyse-openai` does **not** inherit
-  `analyse`'s permissions merely by naming convention — each agent's block is
-  independent and must be set explicitly).
+  differently named agents; each custom agent block is currently independent
+  and must remain explicit.

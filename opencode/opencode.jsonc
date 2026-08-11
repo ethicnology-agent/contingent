@@ -15,8 +15,10 @@
     "@ex-machina/opencode-anthropic-auth@1.8.1",
     "@warp-dot-dev/opencode-warp@0.1.7"
   ],
-  // Kimi est le flagship par defaut; GPT et Opus restent selectionnables comme
-  // primaires alternatifs pour repartir les quotas des abonnements.
+  // Kimi est le flagship par defaut par choix explicite de l'operateur; GPT et
+  // Opus restent selectionnables pour les depots prives et pour repartir les
+  // quotas. Kimi passe par Prem Router en TLS simple : le selectionner envoie
+  // les prompts en clair a Prem, y compris les instructions du projet.
   "default_agent": "kimi",
   // small_model sert les taches legeres. Il passe cote OpenAI avec le reste du
   // volume subi, pour que le quota Anthropic soit consomme par le raisonnement
@@ -87,7 +89,9 @@
     // ATTENTION — chemin NON chiffre de bout en bout, contrairement a "prem".
     // router.prem.io est un service distinct de gateway.prem.io : c'est un
     // routeur OpenAI-compatible classique, en TLS simple. Prem voit donc les
-    // prompts en clair. A ne pas utiliser pour du code de depot prive.
+    // prompts en clair. Le choix de Kimi comme agent par defaut privilegie la
+    // vitesse, pas la confidentialite; basculer sur GPT ou Opus avant le premier
+    // tour d'un depot prive.
     // Verifie : cert CN=prem.io, meme IP Cloudflare que conf-engine.prem.io.
     //
     // Cle DEDIEE, distincte de PREM_API_KEY : la cle confidentielle suffixee
@@ -194,6 +198,7 @@
     },
     "edit": "allow",
     "bash": "allow",
+    "imagegen": "ask",
     // external_directory gate egalement les chemins detectes dans de nombreuses
     // commandes shell. Les repertoires entiers sont refuses car le controle se
     // fait sur un glob de parent, pas necessairement sur le fichier exact.
@@ -212,6 +217,8 @@
       "~/.gnupg/*": "deny",
       "~/.aws/*": "deny",
       "~/.config/gh/*": "deny",
+      "~/.secrets/*": "deny",
+      "~/.codex/*": "deny",
       "~/.local/share/opencode/*": "deny",
       "~/.local/share/opencode/plans/*": "allow"
     }
@@ -255,6 +262,7 @@
       // plan.
       "permission": {
         "bash": "deny",
+        "imagegen": "deny",
         "question": "allow",
         // Mode special Anthropic en lecture seule : exploration sur OpenAI,
         // sans worker d'implementation.
@@ -274,7 +282,7 @@
       "mode": "subagent",
       "model": "anthropic/claude-haiku-4-5",
       "prompt": "{file:./prompts/explore.md}",
-      "steps": 8,
+      "steps": 12,
       "permission": {
         "*": "deny",
         "read": "allow",
@@ -342,7 +350,7 @@
       "model": "openai/gpt-5.6-luna",
       "variant": "low",
       "prompt": "{file:./prompts/explore.md}",
-      "steps": 8,
+      "steps": 12,
       "permission": {
         "*": "deny",
         "read": "allow",
@@ -354,7 +362,7 @@
       }
     },
     "worker-openai": {
-      "description": "Implemente une sous-tache isolee et bornee sur OpenAI Luna; ne pas utiliser pour du travail concurrent sur les memes fichiers.",
+      "description": "Implemente une unite de travail coherente et bornee sur OpenAI Luna, avec plusieurs etapes liees si necessaire; ne pas utiliser pour du travail concurrent sur les memes fichiers.",
       "mode": "subagent",
       "model": "openai/gpt-5.6-luna",
       "variant": "medium",
@@ -376,7 +384,7 @@
       // Sonnet 5 coute deux fois Haiku mais reste 2,5x moins cher qu'Opus en
       // sortie et vise explicitement le codage agentique. Haiku reste reserve
       // a l'exploration ou la vitesse prime sur la qualite d'implementation.
-      "description": "Implemente une sous-tache isolee et bornee sur Anthropic Sonnet; ne pas utiliser pour du travail concurrent sur les memes fichiers.",
+      "description": "Implemente une unite de travail coherente et bornee sur Anthropic Sonnet, avec plusieurs etapes liees si necessaire; ne pas utiliser pour du travail concurrent sur les memes fichiers.",
       "mode": "subagent",
       "model": "anthropic/claude-sonnet-5",
       "variant": "low",

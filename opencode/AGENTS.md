@@ -76,6 +76,14 @@ et que `platform-tools` est dans le `PATH`. Le chemin concret du SDK et le
 serveur ADB de cette machine sont dans `AGENTS.local.md`; ne suppose jamais que
 `flutter`, `adb` ou le SDK sont configurés par le shell de l'agent.
 
+## Fixtures des tests d'intégration
+
+Les tests d'intégration financés de bullbitcoin-mobile (payjoin, coins)
+attendent deux mnemonics testnet dans `TEST_ALICE_MNEMONIC` et
+`TEST_BOB_MNEMONIC`. Leurs valeurs sont dans `AGENTS.local.md` : ne les
+recopie jamais dans un fichier versionné, un ticket ou une CI publique, et ne
+redemande pas à l'utilisateur de les partager.
+
 ## Historique git
 
 Un correctif à un commit de cette branche n'est jamais un nouveau commit.
@@ -103,6 +111,14 @@ demande avant de réécrire l'historique. Après accord, coordonne-toi et utilis
 `git push --force-with-lease`, jamais `--force`. Vérifie ensuite les branches et
 PR qui dépendaient de cet historique.
 
+Avant toute réécriture d'une branche courante déjà publiée qui devra finir par
+un `git push --force-with-lease`, commence par synchroniser cette branche avec
+son upstream via `git pull --rebase`, puis contrôle `git status` et le journal
+local/distant **avant** de toucher à l'historique. Ne fais jamais ce pull après
+la réécriture : il réintroduirait l'ancien historique. Juste avant le push,
+refais un `git fetch` et vérifie que le remote n'a pas avancé depuis cette
+synchronisation ; s'il a avancé, intègre ces commits avant de pousser.
+
 `pull.rebase=true` réécrit les commits locaux et `rebase.autostash` peut créer
 un conflit lors de la réapplication finale. Pour une opération d'historique,
 préfère `git fetch` suivi d'un rebase explicite, et contrôle `git status` avant
@@ -126,6 +142,37 @@ Les standards du projet priment sur nos habitudes.
 La revue est le goulot d'étranglement, pas l'écriture. Quand tu planifies plus
 d'un commit, ou une PR : charge la skill `decoupage-livraison`.
 
+## Délégation parallèle
+
+Quand plusieurs unités de travail sont réellement indépendantes, l'agent
+primaire lance autant de sous-agents que nécessaire en parallèle, dans le même
+appel groupé. Il n'impose pas de limite arbitraire à leur nombre et ne
+sérialise pas un travail parallélisable, sauf si le coût de délégation dépasse
+le gain attendu.
+
+Chaque délégation reste cohérente, bornée et suffisamment détaillée : périmètre,
+résultat attendu et vérification. Elle peut contenir plusieurs étapes étroitement
+liées et toucher plusieurs fichiers ; un commit n'est pas une frontière de
+délégation. Ne lance jamais en parallèle des agents susceptibles de modifier les
+mêmes fichiers ou le même état mutable. Les sous-agents ne redélèguent pas ;
+l'agent primaire reste responsable de l'intégration, de la vérification globale
+et du découpage final des commits.
+
+L'indépendance couvre aussi les ressources d'exécution, pas seulement les
+fichiers source. Deux workers parallèles ne doivent jamais partager un processus
+long, un port, un appareil, un émulateur, une base de données mutable, l'index
+Git, une installation de dépendances, un générateur de code (`build_runner`) ou
+le même répertoire de build. Désigne un seul propriétaire pour toute ressource
+exclusive et indique-le dans sa délégation ; les autres workers reportent la
+vérification concernée. Les builds et vérifications globales s'exécutent une
+seule fois, en série, après intégration par l'agent primaire.
+
+Un worker ne lance ni watcher ni serveur persistant sauf demande explicite. Une
+commande susceptible d'attendre un verrou doit avoir une durée bornée. En cas de
+contention, de verrou occupé ou d'absence de progression, arrête et remonte le
+blocage : ne relance pas en boucle et ne démarre pas un second processus
+concurrent.
+
 ## Notes de travail
 
 Les plans d'enquête, comptes rendus de tests, listes de pistes et documents de
@@ -139,6 +186,18 @@ maintenue par le projet mérite d'être committée.
 N'affirme pas qu'une chose fonctionne sans l'avoir exécutée. Si tu ne peux pas
 la vérifier, dis-le explicitement plutôt que de la présenter comme acquise.
 Distingue toujours ce que tu as mesuré de ce que tu supposes.
+
+## Avancement visible
+
+La todo est le seul endroit où l'utilisateur voit où tu en es pendant une tâche
+longue. Tiens-la à jour **au fil de l'eau**, pas en fin de course : une entrée
+passe à `in_progress` avant de commencer, à `completed` dès que c'est fini, et
+les découvertes en route deviennent de nouvelles entrées. Sur une opération qui
+s'étale (rebase, migration, build, audit), le libellé doit dire *où* tu en es —
+« vérification: cargo test + clippy » vaut mieux que « vérifier ».
+
+Une todo mise à jour d'un bloc à la fin ne sert à rien : au moment où elle
+arrive, l'utilisateur a déjà attendu sans savoir.
 
 ## Périmètre de la machine
 

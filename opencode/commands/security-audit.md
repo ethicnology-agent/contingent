@@ -1,8 +1,5 @@
 ---
-description: Audit security vulnerabilities, then apply and verify targeted fixes with Kimi K3.
-agent: kimi
-model: prem-router/kimi-k3
-variant: high
+description: Audit security vulnerabilities, then apply and verify targeted fixes with the active agent.
 ---
 
 Audit the security of $ARGUMENTS. If no target is provided, audit the active

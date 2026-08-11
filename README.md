@@ -15,7 +15,7 @@ files.
 ## What's in here
 
 ```text
-opencode/       OpenCode config, global AGENTS.md, prompts, plugins
+opencode/       OpenCode config, global AGENTS.md, prompts, plugins, tools
 git/            Portable Git behavior (autosquash, rerere, aliases...)
 skills/         On-demand skills: delivery, rtk, Android and disk/build safety
 bin/            yknotify-agent: SSH-agent proxy for security-key context
@@ -102,17 +102,27 @@ another clone.
 The configuration defines two deliberately separate Prem paths:
 
 - `prem/*` is the confidential path. The local Confidential Proxy encrypts
-  requests before sending them to Prem. It requires `PREM_API_KEY`,
-  `CLIENT_KEK`, `PROXY_URL`, and `ENCLAVE_URL` in the environment, then starts
-  with `confidential-proxy start --compat openai --kek "$CLIENT_KEK"`.
+  requests before sending them to Prem. OpenCode reads the API key from
+  `~/.secrets/prem-api-key`; start the proxy with the API key and client KEK
+  read directly from their machine-local files rather than exported globally.
 - `prem-router/kimi-k3` uses `router.prem.io` over ordinary TLS. It supports
-  tools, attachments, and reasoning, but Prem can read the prompt. Do not use
-  it for private repository code.
+  tools, attachments, and reasoning, but Prem can read the prompt. Kimi is the
+  configured default by explicit operator choice; select GPT or Opus before the
+  first turn when repository confidentiality matters.
 
 Neither API key nor the KEK belongs in this repository. The current endpoint
 URLs are published at `https://dashboard.prem.io/endpoints.json`. See
 [ADR-0011](docs/decisions/0011-prem-provider-integration.md) for the trust
 boundary and operational limits.
+
+## Image generation
+
+The optional `imagegen` tool delegates to an authenticated Codex CLI installed
+at `~/debian/codex-cli` and writes new PNGs under
+`~/debian/generated-images`. It is permission-gated, unavailable to read-only
+or worker agents, and does not pass OpenCode's provider credentials into the
+Codex subprocess. Prompts and reference images still leave the machine for
+OpenAI; see [ADR-0013](docs/decisions/0013-image-generation-tool.md).
 
 ## The YubiKey/security-key notification
 

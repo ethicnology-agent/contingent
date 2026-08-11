@@ -22,6 +22,7 @@ bootstrap script works until one has actually been built and tested.
 | [0010](0010-rtk-command-rewriting.md) | Rewriting shell commands through rtk instead of prompting for it |
 | [0011](0011-prem-provider-integration.md) | Separating confidential Prem inference from Prem Router |
 | [0012](0012-machine-local-instructions.md) | Keeping machine-specific agent instructions out of the repository |
+| [0013](0013-image-generation-tool.md) | Constraining delegated image generation through Codex |
 
 ## Status values
 

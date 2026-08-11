@@ -34,8 +34,9 @@ wired:
    rate limit is never persisted onto the assistant message. Upstream,
    `session/retry.ts` passes the quota text to `SessionStatus.set`, which
    publishes a `session.status` event of type `retry`. Because the retry loop
-   is unbounded, that event repeats on every attempt, so a `recovering` guard
-   bounds the switch to a single replay.
+   is unbounded, that event repeats on every attempt. `recovering` prevents
+   concurrent recovery and `attempted` permits only one recovery for the
+   captured Anthropic request; a new Anthropic user message resets that guard.
 
 `"Overloaded"` (HTTP 529) is deliberately excluded from the quota patterns: it
 is a transient server condition the runtime already retries, and burning
@@ -68,14 +69,16 @@ manual provider switch.
 
 Negative / known limits:
 
-- The fallback table covers `analyse`, `plan`, `build` and `explore` only.
-  Rate limits also occur on the `general` subagent and on the internal
-  `title` / `summary` / `compaction` agents, which will not switch.
+- The fallback table covers `opus`, `plan`, `explore`, and
+  `worker-anthropic`. Internal `title` / `summary` / `compaction` agents will
+  not switch, although they currently run on OpenAI and do not need this path.
 - Only text and file parts are replayed; other part types are dropped.
 - The replay silently changes which model answered. The switch is logged at
   `warn` level under service `anthropic-fallback`, but the session itself
   carries no marker.
 - OpenAI quota is consumed without asking.
+- Per-session capture and attempt state is removed when the session becomes
+  idle or is deleted, so completed sessions do not accumulate in plugin memory.
 
 ## Evidence
 
@@ -93,6 +96,10 @@ Negative / known limits:
 - Offline tests against the measured input shape cover: replay on a quota
   retry, no replay on `Overloaded`, and exactly one replay when the retry
   event repeats four times.
+- The implementation now has separate in-flight and per-request guards. The
+  earlier single `recovering` set only prevented overlapping calls; after a
+  failed recovery, a later retry event could start another attempt despite the
+  stated once-only invariant.
 
 ## Revisit when
 

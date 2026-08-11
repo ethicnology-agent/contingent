@@ -17,7 +17,8 @@ import type { Plugin } from "@opencode-ai/plugin"
 //    publie un `session.status` de type `retry` portant le message de quota :
 //    c'est le declencheur principal. Comme ce retry boucle sans limite
 //    (anomalyco/opencode#30510), l'evenement est republie a chaque tentative,
-//    d'ou le garde `recovering` qui borne la bascule a une seule.
+//    d'ou les gardes `recovering` et `attempted` qui bornent respectivement la
+//    concurrence et le nombre de bascules par requete.
 
 type Model = {
   providerID: string
@@ -88,6 +89,7 @@ const replayableParts = (parts: Array<Record<string, unknown>>): ReplayablePart[
 export const AnthropicFallbackPlugin: Plugin = async ({ client, directory }) => {
   const requests = new Map<string, Request>()
   const recovering = new Set<string>()
+  const attempted = new Set<string>()
 
   const exigerSucces = <T>(operation: string, response: T): T => {
     const error = (response as { error?: unknown })?.error
@@ -97,13 +99,19 @@ export const AnthropicFallbackPlugin: Plugin = async ({ client, directory }) => 
 
   const recover = async (sessionID: string) => {
     const request = requests.get(sessionID)
-    if (!request || request.model.providerID !== "anthropic" || recovering.has(sessionID)) return
+    if (
+      !request ||
+      request.model.providerID !== "anthropic" ||
+      recovering.has(sessionID) ||
+      attempted.has(sessionID)
+    ) return
 
     const fallback = fallbacks[request.agent]
     const parts = replayableParts(request.parts)
     if (!fallback || parts.length === 0) return
 
     recovering.add(sessionID)
+    attempted.add(sessionID)
     try {
       // Une requete qui vient d'echouer n'est generalement plus active, donc
       // `abort` peut legitimement retourner une erreur. Il reste utile contre
@@ -160,6 +168,10 @@ export const AnthropicFallbackPlugin: Plugin = async ({ client, directory }) => 
 
       if (!agent || !model || !messageID || !sessionID) return
 
+      // A new Anthropic request gets one fresh recovery attempt. The replay
+      // itself uses OpenAI and therefore cannot accidentally reset this guard.
+      if (model.providerID === "anthropic") attempted.delete(sessionID)
+
       requests.set(sessionID, {
         agent,
         messageID,
@@ -194,9 +206,19 @@ export const AnthropicFallbackPlugin: Plugin = async ({ client, directory }) => 
         return
       }
 
+      if (
+        event.type === "session.idle" ||
+        (event.type === "session.status" && event.properties.status.type === "idle")
+      ) {
+        requests.delete(event.properties.sessionID)
+        attempted.delete(event.properties.sessionID)
+        return
+      }
+
       if (event.type === "session.deleted") {
         requests.delete(event.properties.info.id)
         recovering.delete(event.properties.info.id)
+        attempted.delete(event.properties.info.id)
       }
     },
   }

@@ -234,6 +234,9 @@ def action_external_directory(chemin: str, regles: dict) -> str:
 
 regles_ed = (cfg.get("permission", {}) or {}).get("external_directory", {}) or {}
 if isinstance(regles_ed, dict):
+    verdict(regles_ed.get("~/.secrets/*") == "deny",
+            "external_directory refuse ~/.secrets/*",
+            "les cles Prem sont stockees sous ~/.secrets")
     for nom, ag in cfg.get("agent", {}).items():
         for cle, bloc in (ag.get("permission", {}) or {}).items():
             if not isinstance(bloc, dict):
@@ -244,7 +247,22 @@ if isinstance(regles_ed, dict):
                 effective = action_external_directory(motif, regles_ed)
                 verdict(effective != "deny",
                         f"agent '{nom}': {cle} allow sur '{motif}' n'est pas annule par external_directory",
-                        "" if effective != "deny" else "external_directory refuse ce chemin : regle morte")
+                         "" if effective != "deny" else "external_directory refuse ce chemin : regle morte")
+
+# Les outils locaux qui ecrivent hors du depot ne doivent pas contourner les
+# roles en lecture seule. Leur permission globale demande une validation
+# humaine, et plan les refuse sans exception.
+tools_dir = ROOT / "opencode" / "tools"
+for ts_file in sorted(tools_dir.glob("*.ts")) if tools_dir.is_dir() else []:
+    outil = ts_file.stem
+    globale = (cfg.get("permission", {}) or {}).get(outil)
+    plan = (((cfg.get("agent", {}) or {}).get("plan", {}) or {})
+            .get("permission", {}) or {}).get(outil)
+    verdict(globale in ("ask", "deny"),
+            f"outil local '{outil}' soumis a permission globale",
+            f"action actuelle: {globale!r}")
+    verdict(plan == "deny", f"agent plan refuse l'outil local '{outil}'",
+            f"action actuelle: {plan!r}")
 
 # --- 4e. Les liens Markdown relatifs resolvent-ils ? ------------------------
 for md in sorted(ROOT.rglob("*.md")):
@@ -315,18 +333,19 @@ if py_script.exists():
     verdict(r.returncode == 0, "bin/yknotify-agent compile (py_compile)",
             r.stderr.strip()[-300:] if r.returncode else "")
 
-test_env = ROOT / "opencode" / "plugins"
-if test_env.is_dir():
-    for ts_file in sorted(test_env.glob("*.ts")):
-        esbuild = subprocess.run(["esbuild", str(ts_file), "--log-level=error"],
-                                 capture_output=True, text=True)
-        if esbuild.returncode == 0 or "not found" in (esbuild.stderr or "").lower():
-            skipped = esbuild.returncode != 0
-            verdict(not skipped or True, f"{ts_file.relative_to(ROOT)} syntaxe (esbuild)",
-                    "esbuild introuvable, sauté" if skipped else "")
-        else:
-            verdict(False, f"{ts_file.relative_to(ROOT)} syntaxe (esbuild)",
-                    esbuild.stderr.strip()[-300:])
+test_dirs = [ROOT / "opencode" / "plugins", ROOT / "opencode" / "tools"]
+for test_env in test_dirs:
+    if test_env.is_dir():
+        for ts_file in sorted(test_env.glob("*.ts")):
+            esbuild = subprocess.run(["esbuild", str(ts_file), "--log-level=error"],
+                                     capture_output=True, text=True)
+            if esbuild.returncode == 0 or "not found" in (esbuild.stderr or "").lower():
+                skipped = esbuild.returncode != 0
+                verdict(not skipped or True, f"{ts_file.relative_to(ROOT)} syntaxe (esbuild)",
+                        "esbuild introuvable, sauté" if skipped else "")
+            else:
+                verdict(False, f"{ts_file.relative_to(ROOT)} syntaxe (esbuild)",
+                        esbuild.stderr.strip()[-300:])
 
 print(f"\n{len(OK)} vérification(s) passée(s), {len(ECHECS)} échec(s)\n")
 for e in ECHECS:
