@@ -45,6 +45,8 @@ tests/          Static checks: does the config say what it does?
 ## Manual install
 
 Requires Git ≥ 2.44, Python ≥ 3.10, an OpenSSH client, and OpenCode ≥ 1.18.5.
+[Chafa](https://hpjansson.org/chafa/) is required only for inline image
+previews (`sudo apt install chafa` on Debian).
 [rtk](https://github.com/rtk-ai/rtk) ≥ 0.23.0 is optional: with it on
 `PATH`, shell commands are rewritten to filter their output
 ([0010](docs/decisions/0010-rtk-command-rewriting.md)); without it, the plugin
@@ -123,6 +125,14 @@ at `~/debian/codex-cli` and writes new PNGs under
 or worker agents, and does not pass OpenCode's provider credentials into the
 Codex subprocess. Prompts and reference images still leave the machine for
 OpenAI; see [ADR-0013](docs/decisions/0013-image-generation-tool.md).
+
+## Image previews
+
+The optional `image-display` tool renders images from the active worktree or
+`~/debian/generated-images` through Chafa. Its default mode lets Chafa select
+Kitty, iTerm2, Sixel, or symbols for the attached terminal; `symbols` provides
+a portable ANSI/Unicode fallback when a graphics protocol is filtered over
+SSH. See [ADR-0014](docs/decisions/0014-terminal-image-preview.md).
 
 ## The YubiKey/security-key notification
 

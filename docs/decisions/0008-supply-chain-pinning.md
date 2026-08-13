@@ -107,6 +107,10 @@ Negative:
   each step. `tests/check-coherence.py` now compares the pin against
   `opencode --version` so the next drift fails a check instead of waiting for
   a reader.
+- The pin was subsequently realigned from `1.18.16` to the installed OpenCode
+  `1.18.18` while adding a typed local tool. `npm install --ignore-scripts`
+  updated both plugin and SDK lock entries, `npm run typecheck` passed, and the
+  coherence check confirmed the binary/package versions match.
 - `opencode.jsonc` was validated against the officially published JSON Schema
   (`https://opencode.ai/config.json`) after every change, not just visually
   inspected.

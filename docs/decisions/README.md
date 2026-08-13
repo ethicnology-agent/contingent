@@ -23,6 +23,7 @@ bootstrap script works until one has actually been built and tested.
 | [0011](0011-prem-provider-integration.md) | Separating confidential Prem inference from Prem Router |
 | [0012](0012-machine-local-instructions.md) | Keeping machine-specific agent instructions out of the repository |
 | [0013](0013-image-generation-tool.md) | Constraining delegated image generation through Codex |
+| [0014](0014-terminal-image-preview.md) | Rendering bounded local image previews through Chafa |
 
 ## Status values
 
