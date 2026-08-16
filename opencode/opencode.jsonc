@@ -198,6 +198,7 @@
     },
     "edit": "allow",
     "bash": "allow",
+    "doom_loop": "deny",
     "imagegen": "ask",
     "image-display": "ask",
     // external_directory gate egalement les chemins detectes dans de nombreuses
@@ -235,7 +236,6 @@
       "mode": "primary",
       "model": "anthropic/claude-opus-5",
       "variant": "high",
-      "steps": 50,
       "permission": {
         "edit": "allow",
         "bash": "allow",
@@ -284,7 +284,6 @@
       "mode": "subagent",
       "model": "anthropic/claude-haiku-4-5",
       "prompt": "{file:./prompts/explore.md}",
-      "steps": 12,
       "permission": {
         "*": "deny",
         "read": "allow",
@@ -300,7 +299,6 @@
       "mode": "primary",
       "model": "openai/gpt-5.6-sol",
       "variant": "high",
-      "steps": 50,
       "permission": {
         "edit": "allow",
         "bash": "allow",
@@ -323,9 +321,6 @@
       // a "low" pour la vitesse maximale sur des taches simples, remonter a
       // "high"/"max" a la volee pour une tache precise sans changer d'agent.
       "variant": "medium",
-      // Borne les iterations agentiques : une boucle non detectee sur un
-      // modele rapide consomme du temps reel avant meme d'etre remarquee.
-      "steps": 40,
       "permission": {
         "edit": "allow",
         "bash": "allow",
@@ -352,7 +347,6 @@
       "model": "openai/gpt-5.6-luna",
       "variant": "low",
       "prompt": "{file:./prompts/explore.md}",
-      "steps": 12,
       "permission": {
         "*": "deny",
         "read": "allow",
@@ -369,7 +363,6 @@
       "model": "openai/gpt-5.6-luna",
       "variant": "medium",
       "prompt": "{file:./prompts/worker.md}",
-      "steps": 12,
       "permission": {
         "*": "deny",
         "read": "allow",
@@ -391,7 +384,6 @@
       "model": "anthropic/claude-sonnet-5",
       "variant": "low",
       "prompt": "{file:./prompts/worker.md}",
-      "steps": 12,
       "permission": {
         "*": "deny",
         "read": "allow",
@@ -416,16 +408,13 @@
     "compaction": {
       // Luna est concu pour les charges rapides a fort volume et dispose du
       // meme contexte de 1,05M tokens que les flagships GPT-5.6.
-      "model": "openai/gpt-5.6-luna",
-      "steps": 1
+      "model": "openai/gpt-5.6-luna"
     },
     "title": {
-      "model": "openai/gpt-5.6-luna",
-      "steps": 1
+      "model": "openai/gpt-5.6-luna"
     },
     "summary": {
-      "model": "openai/gpt-5.6-luna",
-      "steps": 1
+      "model": "openai/gpt-5.6-luna"
     }
   }
 }
