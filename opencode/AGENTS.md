@@ -214,11 +214,16 @@ un contournement construit sur un faux négatif coûte une session.
 
 Pour Android et adb en particulier : charge la skill `appareil-android`.
 
-Des reverse-forwards SSH exposent dans la VM des services qui tournent sur
-l'hôte, notamment le serveur adb et le port du runner Flutter. Ne remplace pas
-ce mécanisme par du wireless debugging. Les valeurs concrètes — hôte, ports,
+Des reverse-forwards SSH exposent dans la VM des services qui tournent sur le
+poste client, notamment un serveur adb et le port du runner Flutter. Ne remplace
+pas ce mécanisme par du wireless debugging. Les valeurs concrètes — hôte, ports,
 utilisateur — sont propres à la machine et vivent dans `AGENTS.local.md`, qui
 n'est pas versionné : ne les recopie jamais ici.
+
+Aucun téléphone n'est branché sur cette VM, et plusieurs serveurs adb distincts
+peuvent en tenir un selon la machine où il est connecté. Deux serveurs adb ne se
+fusionnent jamais : on bascule de profil. Ne démarre aucun serveur adb ici —
+celui que tu créerais serait vide et volerait le port d'un forward.
 
 ## GitHub en lecture seule
 
