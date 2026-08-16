@@ -220,6 +220,11 @@ pas ce mécanisme par du wireless debugging. Les valeurs concrètes — hôte, p
 utilisateur — sont propres à la machine et vivent dans `AGENTS.local.md`, qui
 n'est pas versionné : ne les recopie jamais ici.
 
+Ces forwards appartiennent à une connexion dédiée, jamais aux sessions de
+travail : un port ne se binde qu'une fois, et plusieurs sessions parallèles
+doivent pouvoir s'ouvrir sans se disputer les mêmes ports. Une session qui
+tombe ne doit pas emporter le tunnel, ni l'inverse.
+
 Aucun téléphone n'est branché sur cette VM, et plusieurs serveurs adb distincts
 peuvent en tenir un selon la machine où il est connecté. Deux serveurs adb ne se
 fusionnent jamais : on bascule de profil. Ne démarre aucun serveur adb ici —
