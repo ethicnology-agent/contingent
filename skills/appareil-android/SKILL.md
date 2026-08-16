@@ -84,9 +84,20 @@ hexadécimaux, puis exactement ce nombre d'octets.
 
 `adb forward` binde le port sur la machine du **serveur** adb, alors que Flutter
 se connecte en dur à `127.0.0.1` sur la machine où il tourne. D'où le port fixe
-par profil (`--host-vmservice-port`) et le relais qui l'amène jusqu'ici : selon
-le profil, un `RemoteForward` SSH ou une unité socket systemd. Sans port fixe,
-adb en choisit un dynamiquement, impossible à pré-router.
+(`--host-vmservice-port`) et le relais qui l'amène jusqu'ici : selon le profil,
+un `RemoteForward` SSH ou une unité socket systemd. Sans port fixe, adb en
+choisit un dynamiquement, impossible à pré-router.
+
+Ce port est attribué **par appareil**, jamais par profil. La table de forwards
+d'adb est indexée sur la spécification locale seule : un second
+`adb forward tcp:<P>` demandé pour un autre téléphone ne renvoie pas d'erreur,
+il remplace silencieusement le premier. Deux runs parallèles qui partagent un
+port voient donc leur vmservice pointer vers le mauvais appareil, sans le
+moindre message — un mode de panne bien plus vicieux qu'un échec de bind.
+
+Corollaire : deux sessions parallèles visant deux appareils doivent aussi
+travailler dans deux checkouts distincts. Un même `build/`, `.dart_tool/` ou
+répertoire de sortie Gradle partagé se corrompt.
 
 `adb reverse tcp:P tcp:Q` fait que le téléphone atteint `127.0.0.1:Q` sur la
 machine du serveur adb, pas ici. Deux issues, selon que cette machine sait ou
