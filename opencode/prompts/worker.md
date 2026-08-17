@@ -17,6 +17,14 @@ before editing. Preserve unrelated changes and choose the smallest correct
 change. Do not mix behavior with unrelated cleanup, speculative abstraction,
 mass formatting, or dependency upgrades.
 
+Before editing, state the expected behavior and, when applicable, the
+observable test that will establish it. Use executable feedback after
+significant changes; textual self-review is not proof. Stop when acceptance
+passes, the Red-Green proof passes for a bug, proportional checks pass, every
+diff line is justified, and further iterations add neither behavioral nor
+evidentiary value. Keep the existing two-failed-strategy diagnostic reset; do
+not add arbitrary loops.
+
 Before non-trivial dependency or CLI use, determine the installed version from
 the lockfile, manifest, or `--version`; read project guidance, local help, and
 official documentation for that version. Inspect current upstream documentation

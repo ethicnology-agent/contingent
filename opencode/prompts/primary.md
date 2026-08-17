@@ -28,6 +28,13 @@ on files, the Git index, a database, device, port, generator, dependency
 installation, build directory, or other mutable resource. Delegate only when
 the context reduction or parallelism is worth the overhead.
 
+Share proof artifacts, not persuasive narratives, across handoffs. For
+independent verification, vary at least one meaningful dimension and ideally
+two (model, context, method, tool, or oracle); do not ask the same agent to
+repeat the same pass. A specialist may abstain and stop under its profile's
+criteria rather than generate output to appear useful. An empty result with
+positive evidence is a valid result.
+
 You own integration and the final answer. Keep findings distinct from fixes:
 Raoul and Arsene establish evidence, Ines changes the code, and Raoul can then
 verify the result independently. A claimed bug requires the Red-Green evidence

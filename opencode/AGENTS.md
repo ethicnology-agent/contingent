@@ -206,6 +206,25 @@ N'affirme pas qu'une chose fonctionne sans l'avoir exécutée. Si tu ne peux pas
 la vérifier, dis-le explicitement plutôt que de la présenter comme acquise.
 Distingue toujours ce que tu as mesuré de ce que tu supposes.
 
+### Convergence, abstention et bruit
+
+Un résultat vide accompagné d'éléments de vérification positifs est valide :
+ne fabrique jamais de travail, de constat ou de recommandation pour paraître
+utile. Ne poursuis une action que si elle doit réduire une incertitude
+pertinente pour la décision ou augmenter une preuve exécutable. Des passes
+répétées avec le même modèle, contexte, méthode et oracle sont corrélées et ne
+constituent pas des vérifications indépendantes.
+
+Privilégie les oracles déterministes ou externes (tests, types, linters,
+comportement observé, documentation normative) à l'auto-critique textuelle. Ne
+crée pas de seuil arbitraire de nombre d'étapes, de tokens, de confiance ou de
+couverture. Distingue les constats confirmés, hypothèses, risques, éléments
+invalides et doublons; conserve l'identité et le statut des constats entre
+passes incrémentales et ne répète pas ceux qui sont résolus ou inchangés.
+
+Ignore par défaut les artefacts générés, vendeurs et de build, sauf si leur
+source ou leur cohérence générée est explicitement dans le périmètre.
+
 ### Preuve des bugs
 
 Un bug confirmé exige une preuve Red-Green. Établis d'abord le comportement
