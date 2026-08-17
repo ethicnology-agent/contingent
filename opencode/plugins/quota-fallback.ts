@@ -1,28 +1,30 @@
 import type { Plugin } from "@opencode-ai/plugin"
 
-// Rejoue le dernier message utilisateur sur un equivalent OpenAI apres une
-// erreur de quota Anthropic.
+// Replay the last user message on the counterpart contingent after a confirmed
+// OpenAI or Anthropic quota error.
 //
-// Deux constats mesures sur opencode 1.18.5 gouvernent ce fichier — voir
-// docs/decisions/0009 pour la demarche et les preuves.
+// Two observations measured on OpenCode 1.18.5 govern this file; see
+// docs/decisions/0009 for the evidence.
 //
-// 1. `input.messageID` du hook `chat.message` est optionnel dans le SDK, et
-//    ABSENT a l'execution. Un garde qui l'exige laisse la map `requests` vide
-//    en permanence, et le plugin devient un no-op silencieux. La source fiable
-//    est `output.message`, dont `id`, `agent`, `model` et `sessionID` sont des
-//    champs obligatoires.
+// 1. `input.messageID` from the `chat.message` hook is optional in the SDK and
+//    absent at runtime. Requiring it leaves `requests` permanently empty and
+//    turns the plugin into a silent no-op. `output.message` is authoritative;
+//    its `id`, `agent`, `model`, and `sessionID` fields are required.
 //
-// 2. Un rate limit retryable ne produit pas d'erreur persistee sur le message
-//    assistant. En amont, `session/retry.ts` appelle `SessionStatus.set`, qui
-//    publie un `session.status` de type `retry` portant le message de quota :
-//    c'est le declencheur principal. Comme ce retry boucle sans limite
-//    (anomalyco/opencode#30510), l'evenement est republie a chaque tentative,
-//    d'ou les gardes `recovering` et `attempted` qui bornent respectivement la
-//    concurrence et le nombre de bascules par requete.
+// 2. A retryable rate limit does not persist an error on the assistant message.
+//    Upstream, `session/retry.ts` calls `SessionStatus.set`, which publishes a
+//    `retry` session status carrying the quota message. That is the primary
+//    trigger. Because the retry loops indefinitely (anomalyco/opencode#30510),
+//    `recovering` and `attempted` bound concurrency and failovers per request.
 
 type Model = {
   providerID: string
   modelID: string
+}
+
+type Fallback = {
+  agent: string
+  model: Model
 }
 
 type Request = {
@@ -36,15 +38,35 @@ type ReplayablePart =
   | { type: "text"; text: string }
   | { type: "file"; url: string; mime: string; filename?: string }
 
-const fallbacks: Record<string, Model> = {
-  opus: { providerID: "openai", modelID: "gpt-5.6-sol" },
-  plan: { providerID: "openai", modelID: "gpt-5.6-sol" },
-  explore: { providerID: "openai", modelID: "gpt-5.6-luna" },
-  "worker-anthropic": { providerID: "openai", modelID: "gpt-5.6-luna" },
+const fallbacks: Record<string, Fallback> = {
+  codex: {
+    agent: "claude",
+    model: { providerID: "anthropic", modelID: "claude-opus-5" },
+  },
+  claude: {
+    agent: "codex",
+    model: { providerID: "openai", modelID: "gpt-5.6-sol" },
+  },
+  "analyst-openai": {
+    agent: "analyst-anthropic",
+    model: { providerID: "anthropic", modelID: "claude-sonnet-5" },
+  },
+  "analyst-anthropic": {
+    agent: "analyst-openai",
+    model: { providerID: "openai", modelID: "gpt-5.6-luna" },
+  },
+  "worker-openai": {
+    agent: "worker-anthropic",
+    model: { providerID: "anthropic", modelID: "claude-sonnet-5" },
+  },
+  "worker-anthropic": {
+    agent: "worker-openai",
+    model: { providerID: "openai", modelID: "gpt-5.6-luna" },
+  },
 }
 
-// "Overloaded" est volontairement absent : c'est un 529 transitoire que le
-// runtime reessaie deja, et basculer dessus gaspillerait le quota OpenAI.
+// "Overloaded" is deliberately absent: it is a transient 529 already retried
+// by the runtime, and switching providers for it would waste fallback quota.
 const quotaPatterns = [
   "rate limit",
   "usage limit",
@@ -67,15 +89,15 @@ const retryMessageIsQuotaError = (message: string) => {
 }
 
 const replayableParts = (parts: Array<Record<string, unknown>>): ReplayablePart[] => {
-  const resultat: ReplayablePart[] = []
+  const result: ReplayablePart[] = []
   for (const part of parts) {
     if (part.type === "text" && typeof part.text === "string") {
-      resultat.push({ type: "text", text: part.text })
+      result.push({ type: "text", text: part.text })
       continue
     }
 
     if (part.type === "file" && typeof part.url === "string" && typeof part.mime === "string") {
-      resultat.push({
+      result.push({
         type: "file",
         url: part.url,
         mime: part.mime,
@@ -83,15 +105,15 @@ const replayableParts = (parts: Array<Record<string, unknown>>): ReplayablePart[
       })
     }
   }
-  return resultat
+  return result
 }
 
-export const AnthropicFallbackPlugin: Plugin = async ({ client, directory }) => {
+export const QuotaFallbackPlugin: Plugin = async ({ client, directory }) => {
   const requests = new Map<string, Request>()
   const recovering = new Set<string>()
   const attempted = new Set<string>()
 
-  const exigerSucces = <T>(operation: string, response: T): T => {
+  const requireSuccess = <T>(operation: string, response: T): T => {
     const error = (response as { error?: unknown })?.error
     if (error) throw new Error(`${operation}: ${JSON.stringify(error)}`)
     return response
@@ -101,52 +123,73 @@ export const AnthropicFallbackPlugin: Plugin = async ({ client, directory }) => 
     const request = requests.get(sessionID)
     if (
       !request ||
-      request.model.providerID !== "anthropic" ||
       recovering.has(sessionID) ||
       attempted.has(sessionID)
     ) return
 
     const fallback = fallbacks[request.agent]
     const parts = replayableParts(request.parts)
-    if (!fallback || parts.length === 0) return
+    if (
+      !fallback ||
+      fallback.model.providerID === request.model.providerID ||
+      parts.length === 0
+    ) return
 
     recovering.add(sessionID)
     attempted.add(sessionID)
     try {
-      // Une requete qui vient d'echouer n'est generalement plus active, donc
-      // `abort` peut legitimement retourner une erreur. Il reste utile contre
-      // une course, mais ne doit jamais empecher le revert et le replay.
+      // A failed request is usually no longer active, so abort may legitimately
+      // fail. It still protects against a race but must not block the replay.
       try {
         await client.session.abort({
           path: { id: sessionID },
           query: { directory },
         })
       } catch {
-        // Best effort seulement : voir le commentaire ci-dessus.
+        // Best effort only; see the comment above.
       }
-      exigerSucces("revert", await client.session.revert({
+      requireSuccess("revert", await client.session.revert({
         path: { id: sessionID },
         query: { directory },
         body: { messageID: request.messageID },
       }))
-      exigerSucces("promptAsync", await client.session.promptAsync({
+      requireSuccess("promptAsync", await client.session.promptAsync({
         path: { id: sessionID },
         query: { directory },
-        body: { agent: request.agent, model: fallback, parts },
+        body: { agent: fallback.agent, model: fallback.model, parts },
       }))
       requests.delete(sessionID)
+      try {
+        await client.tui.showToast({
+          query: { directory },
+          body: {
+            title: "Quota fallback",
+            message: `${request.agent} reached its quota; continuing with ${fallback.agent}.`,
+            variant: "warning",
+            duration: 8000,
+          },
+        })
+      } catch {
+        // Headless clients have no TUI; the structured log below remains.
+      }
       await client.app.log({
         body: {
-          service: "anthropic-fallback",
+          service: "quota-fallback",
           level: "warn",
-          message: "Anthropic quota reached; replayed the request with OpenAI.",
-          extra: { sessionID, agent: request.agent, from: request.model, to: fallback },
+          message: "Provider quota reached; replayed the request with the counterpart contingent.",
+          extra: {
+            sessionID,
+            fromAgent: request.agent,
+            toAgent: fallback.agent,
+            fromModel: request.model,
+            toModel: fallback.model,
+          },
         },
       })
     } catch (error) {
       await client.app.log({
         body: {
-          service: "anthropic-fallback",
+          service: "quota-fallback",
           level: "error",
           message: "Could not replay the request with the fallback model.",
           extra: { sessionID, error: String(error) },
@@ -159,7 +202,7 @@ export const AnthropicFallbackPlugin: Plugin = async ({ client, directory }) => 
 
   return {
     "chat.message": async (input, output) => {
-      // Constat 1 : ne jamais dependre des champs optionnels de `input`.
+      // Observation 1: never depend on optional `input` fields.
       const message = output.message
       const agent = input.agent ?? message?.agent
       const model = input.model ?? message?.model
@@ -168,9 +211,10 @@ export const AnthropicFallbackPlugin: Plugin = async ({ client, directory }) => 
 
       if (!agent || !model || !messageID || !sessionID) return
 
-      // A new Anthropic request gets one fresh recovery attempt. The replay
-      // itself uses OpenAI and therefore cannot accidentally reset this guard.
-      if (model.providerID === "anthropic") attempted.delete(sessionID)
+      // A new user request gets one fresh recovery attempt. A replay enters
+      // this hook while `recovering` is set and must not reset the guard, or a
+      // second provider failure could ping-pong indefinitely.
+      if (!recovering.has(sessionID)) attempted.delete(sessionID)
 
       requests.set(sessionID, {
         agent,
@@ -181,7 +225,7 @@ export const AnthropicFallbackPlugin: Plugin = async ({ client, directory }) => 
     },
 
     event: async ({ event }) => {
-      // Constat 2 : declencheur principal.
+      // Observation 2: primary trigger.
       if (event.type === "session.status" && event.properties.status.type === "retry") {
         if (retryMessageIsQuotaError(event.properties.status.message)) {
           await recover(event.properties.sessionID)
@@ -189,9 +233,8 @@ export const AnthropicFallbackPlugin: Plugin = async ({ client, directory }) => 
         return
       }
 
-      // Chemins defensifs : ils couvrent les erreurs non retryables, pour
-      // lesquelles aucun `session.status` de type retry n'est publie. Ils n'ont
-      // pas ete observes en direct sur ce runtime, seulement testes hors ligne.
+      // Defensive paths for non-retryable failures that publish no retry status.
+      // They have only been tested offline, not observed live on this runtime.
       if (event.type === "session.error" && event.properties.sessionID && isQuotaError(event.properties.error)) {
         await recover(event.properties.sessionID)
         return

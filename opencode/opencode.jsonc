@@ -15,11 +15,9 @@
     "@ex-machina/opencode-anthropic-auth@1.8.1",
     "@warp-dot-dev/opencode-warp@0.1.7"
   ],
-  // Kimi est le flagship par defaut par choix explicite de l'operateur; GPT et
-  // Opus restent selectionnables pour les depots prives et pour repartir les
-  // quotas. Kimi passe par Prem Router en TLS simple : le selectionner envoie
-  // les prompts en clair a Prem, y compris les instructions du projet.
-  "default_agent": "kimi",
+  // Codex is the default orchestrator. Claude remains selectable when an
+  // Anthropic-only contingent is preferable or OpenAI quota is constrained.
+  "default_agent": "codex",
   // small_model sert les taches legeres. Il passe cote OpenAI avec le reste du
   // volume subi, pour que le quota Anthropic soit consomme par le raisonnement
   // (analyse, plan, build) et pas par la plomberie.
@@ -89,9 +87,8 @@
     // ATTENTION — chemin NON chiffre de bout en bout, contrairement a "prem".
     // router.prem.io est un service distinct de gateway.prem.io : c'est un
     // routeur OpenAI-compatible classique, en TLS simple. Prem voit donc les
-    // prompts en clair. Le choix de Kimi comme agent par defaut privilegie la
-    // vitesse, pas la confidentialite; basculer sur GPT ou Opus avant le premier
-    // tour d'un depot prive.
+    // prompts en clair. Kimi reste disponible par selection manuelle du modele,
+    // mais aucun agent preconfigure ne route automatiquement un depot vers lui.
     // Verifie : cert CN=prem.io, meme IP Cloudflare que conf-engine.prem.io.
     //
     // Cle DEDIEE, distincte de PREM_API_KEY : la cle confidentielle suffixee
@@ -226,127 +223,56 @@
     }
   },
   "agent": {
-    // Les agents natifs generiques sont remplaces par les profils flagships et
-    // les workers bornes ci-dessous. Sans disable, OpenCode les recrée meme si
-    // aucune surcharge "build" ou "general" n'est presente.
+    // Only Codex and Claude are visible. The built-in profiles are replaced by
+    // four hidden, provider-affine agents selected by the primary orchestrator.
     "build": { "disable": true },
     "general": { "disable": true },
-    "opus": {
-      "description": "Flagship Anthropic generaliste pour analyse, architecture et implementation complexe.",
+    "plan": { "disable": true },
+    "explore": { "disable": true },
+    "scout": { "disable": true },
+    "codex": {
+      "description": "Default GPT-5.6 Sol orchestrator; delegates analysis to Luna and implementation or Git integration to Ines on Luna.",
       "mode": "primary",
-      "model": "anthropic/claude-opus-5",
+      "model": "openai/gpt-5.6-sol",
       "variant": "high",
+      "prompt": "{file:./prompts/primary.md}",
       "permission": {
         "edit": "allow",
         "bash": "allow",
         "question": "allow",
         "doom_loop": "deny",
-        // Routage croise : un flagship Anthropic consomme les sous-taches sur
-        // l'abonnement OpenAI.
         "task": {
           "*": "deny",
-          "explore-openai": "allow",
+          "analyst-openai": "allow",
           "worker-openai": "allow"
         }
       }
     },
-    "plan": {
+    "claude": {
+      "description": "Claude Opus 5 orchestrator; keeps every delegated analysis, implementation, and Git integration task on Anthropic Sonnet 5.",
       "mode": "primary",
       "model": "anthropic/claude-opus-5",
       "variant": "high",
-      // {file:...} est resolu relativement a CE fichier : le prompt long vit
-      // dans son propre markdown sans casser la portabilite du depot.
-      "prompt": "{file:./prompts/plan.md}",
-      // Reaffirme le refus d'edition du mode plan. C'est maintenant le seul
-      // agent primaire qui contredit le "allow" global, et c'est le but : un
-      // mode plan qui peut ecrire et lancer des commandes n'est plus un mode
-      // plan.
-      "permission": {
-        "bash": "deny",
-        "imagegen": "deny",
-        "image-display": "deny",
-        "question": "allow",
-        // Mode special Anthropic en lecture seule : exploration sur OpenAI,
-        // sans worker d'implementation.
-        "task": {
-          "*": "deny",
-          "explore-openai": "allow"
-        },
-        "edit": {
-          "*": "deny",
-          ".opencode/plans/*.md": "allow",
-          "~/.local/share/opencode/plans/*.md": "allow"
-        }
-      }
-    },
-    "explore": {
-      "description": "Exploration rapide en lecture seule sur Anthropic Haiku pour les primaires OpenAI.",
-      "mode": "subagent",
-      "model": "anthropic/claude-haiku-4-5",
-      "prompt": "{file:./prompts/explore.md}",
-      "permission": {
-        "*": "deny",
-        "read": "allow",
-        "glob": "allow",
-        "grep": "allow",
-        "list": "allow",
-        "lsp": "allow",
-        "webfetch": "allow"
-      }
-    },
-    "gpt": {
-      "description": "Flagship OpenAI generaliste pour analyse, architecture et implementation complexe.",
-      "mode": "primary",
-      "model": "openai/gpt-5.6-sol",
-      "variant": "high",
+      "prompt": "{file:./prompts/primary.md}",
       "permission": {
         "edit": "allow",
         "bash": "allow",
         "question": "allow",
         "doom_loop": "deny",
-        // Routage croise : un flagship OpenAI consomme les sous-taches sur
-        // l'abonnement Anthropic.
         "task": {
           "*": "deny",
-          "explore": "allow",
+          "analyst-anthropic": "allow",
           "worker-anthropic": "allow"
         }
       }
     },
-    "kimi": {
-      "description": "Flagship Kimi K3 generaliste et agent par defaut pour analyse et implementation rapide.",
-      "mode": "primary",
-      "model": "prem-router/kimi-k3",
-      // "medium" et non "high" : compromis vitesse/qualite par defaut. Baisser
-      // a "low" pour la vitesse maximale sur des taches simples, remonter a
-      // "high"/"max" a la volee pour une tache precise sans changer d'agent.
-      "variant": "medium",
-      "permission": {
-        "edit": "allow",
-        "bash": "allow",
-        "question": "allow",
-        // doom_loop a "deny" au lieu du defaut "ask" : une boucle detectee est
-        // coupee immediatement plutot que d'attendre une confirmation, ce qui
-        // est justement le temps qu'on essaie d'economiser.
-        "doom_loop": "deny",
-        // Kimi route toutes ses sous-taches vers l'abonnement OpenAI.
-        "task": {
-          "*": "deny",
-          "explore-openai": "allow",
-          "worker-openai": "allow"
-        }
-      }
-    },
-    "explore-openai": {
-      "description": "Exploration rapide en lecture seule sur OpenAI Luna pour les primaires Anthropic et Kimi.",
+    "analyst-openai": {
+      "description": "Read-only Luna analyst. Delegate with PROFILE: constance for research and planning, PROFILE: raoul for review and verification, or PROFILE: arsene for authorized offensive security analysis.",
       "mode": "subagent",
-      // Luna est le modele OpenAI 2026 destine aux charges rapides et a fort
-      // volume. Il est 3,75x moins cher que GPT-5.4 mini aux tarifs API
-      // publies, avec un contexte de 1,05M tokens. La variante non-fast evite
-      // le service prioritaire, qui double approximativement le cout publie.
+      "hidden": true,
       "model": "openai/gpt-5.6-luna",
-      "variant": "low",
-      "prompt": "{file:./prompts/explore.md}",
+      "variant": "medium",
+      "prompt": "{file:./prompts/analyst.md}",
       "permission": {
         "*": "deny",
         "read": "allow",
@@ -354,12 +280,36 @@
         "grep": "allow",
         "list": "allow",
         "lsp": "allow",
-        "webfetch": "allow"
+        "skill": "allow",
+        "bash": "allow",
+        "webfetch": "allow",
+        "websearch": "allow"
+      }
+    },
+    "analyst-anthropic": {
+      "description": "Read-only Sonnet analyst. Delegate with PROFILE: constance for research and planning, PROFILE: raoul for review and verification, or PROFILE: arsene for authorized offensive security analysis.",
+      "mode": "subagent",
+      "hidden": true,
+      "model": "anthropic/claude-sonnet-5",
+      "variant": "low",
+      "prompt": "{file:./prompts/analyst.md}",
+      "permission": {
+        "*": "deny",
+        "read": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "list": "allow",
+        "lsp": "allow",
+        "skill": "allow",
+        "bash": "allow",
+        "webfetch": "allow",
+        "websearch": "allow"
       }
     },
     "worker-openai": {
-      "description": "Implemente une unite de travail coherente et bornee sur OpenAI Luna, avec plusieurs etapes liees si necessaire; ne pas utiliser pour du travail concurrent sur les memes fichiers.",
+      "description": "Ines on OpenAI Luna. Implements one cohesive change or performs explicitly requested Git integration; never share files, the Git index, or mutable resources with another worker.",
       "mode": "subagent",
+      "hidden": true,
       "model": "openai/gpt-5.6-luna",
       "variant": "medium",
       "prompt": "{file:./prompts/worker.md}",
@@ -372,15 +322,15 @@
         "lsp": "allow",
         "skill": "allow",
         "edit": "allow",
-        "bash": "allow"
+        "bash": "allow",
+        "webfetch": "allow",
+        "websearch": "allow"
       }
     },
     "worker-anthropic": {
-      // Sonnet 5 coute deux fois Haiku mais reste 2,5x moins cher qu'Opus en
-      // sortie et vise explicitement le codage agentique. Haiku reste reserve
-      // a l'exploration ou la vitesse prime sur la qualite d'implementation.
-      "description": "Implemente une unite de travail coherente et bornee sur Anthropic Sonnet, avec plusieurs etapes liees si necessaire; ne pas utiliser pour du travail concurrent sur les memes fichiers.",
+      "description": "Ines on Anthropic Sonnet 5. Implements one cohesive change or performs explicitly requested Git integration; never share files, the Git index, or mutable resources with another worker.",
       "mode": "subagent",
+      "hidden": true,
       "model": "anthropic/claude-sonnet-5",
       "variant": "low",
       "prompt": "{file:./prompts/worker.md}",
@@ -393,7 +343,9 @@
         "lsp": "allow",
         "skill": "allow",
         "edit": "allow",
-        "bash": "allow"
+        "bash": "allow",
+        "webfetch": "allow",
+        "websearch": "allow"
       }
     },
 
