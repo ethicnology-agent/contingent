@@ -320,6 +320,27 @@ peuvent en tenir un selon la machine où il est connecté. Deux serveurs adb ne 
 fusionnent jamais : on bascule de profil. Ne démarre aucun serveur adb ici —
 celui que tu créerais serait vide et volerait le port d'un forward.
 
+## Montrer une image à l'utilisateur
+
+Tu ne vois pas les images ; l'utilisateur, si. Dès qu'une capture d'écran, un
+schéma ou une image générée fait avancer la conversation, affiche-la avec
+l'outil `image-warp`, qui la centre dans le terminal en vraies couleurs, plutôt
+qu'avec `image-display`, dont la sortie Chafa n'est que de l'art ASCII illisible
+pour juger d'un rendu. `image-warp-close` la retire ensuite.
+
+Le terminal est Warp. Il implémente le **protocole graphique Kitty** mais **pas**
+le protocole d'images iTerm2 (`OSC 1337`), et n'annonce ni l'un ni l'autre : sa
+réponse `DA1` se limite à `62`. N'écris donc jamais de séquence `OSC 1337` en
+espérant un rendu, et ne déduis pas d'une réponse de capacités pauvre qu'aucun
+protocole n'est disponible. Interroge le terminal — `ESC _G a=q` doit répondre
+`OK` — au lieu de supposer ce qu'il sait faire.
+
+Une image Kitty flotte au-dessus de la grille de texte : elle survit aux
+redessins du TUI et ne disparaît que sur suppression explicite par son
+identifiant, suivie d'un `SIGWINCH` pour que l'interface repeigne la zone. Le
+shell d'un outil n'ayant pas de terminal de contrôle (`/dev/tty` → `ENXIO`), le
+tty se trouve en remontant aux processus ancêtres.
+
 ## GitHub en lecture seule
 
 Le token `gh` de cette machine est **volontairement** en lecture seule (PAT
