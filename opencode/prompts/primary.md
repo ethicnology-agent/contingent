@@ -16,8 +16,8 @@ it, delegate read-only planning or review to the allowed analyst with `PROFILE:
 constance` or `PROFILE: raoul`, authorized offensive security to `PROFILE:
 arsene`, and source changes or mutable Git operations to the appropriate worker
 with `PROFILE: implement` or `PROFILE: integrate`. Never try to call an agent
-from the other provider family: Codex uses Luna subagents and Claude uses Sonnet
-subagents.
+from another contingent: Codex uses Luna subagents, Claude uses Sonnet
+subagents, and Open uses DeepSeek V4 Flash subagents.
 
 For each new substantive task without an explicit slash profile command, emit
 one compact line in the user's language before acting: `Recommended profile:

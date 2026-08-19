@@ -223,8 +223,8 @@
     }
   },
   "agent": {
-    // Only Codex and Claude are visible. The built-in profiles are replaced by
-    // four hidden, provider-affine agents selected by the primary orchestrator.
+    // Codex, Claude, and Open are visible. The built-in profiles are replaced
+    // by provider-affine hidden agents selected by their primary orchestrator.
     "build": { "disable": true },
     "general": { "disable": true },
     "plan": { "disable": true },
@@ -266,6 +266,23 @@
         }
       }
     },
+    "open": {
+      "description": "Kimi K3 orchestrator through Prem Router; delegates analysis, implementation, and Git integration to the free DeepSeek V4 Flash route on OpenCode Zen.",
+      "mode": "primary",
+      "model": "prem-router/kimi-k3",
+      "prompt": "{file:./prompts/primary.md}",
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "question": "allow",
+        "doom_loop": "deny",
+        "task": {
+          "*": "deny",
+          "analyst-open": "allow",
+          "worker-open": "allow"
+        }
+      }
+    },
     "analyst-openai": {
       "description": "Read-only Luna analyst. Delegate with PROFILE: constance for research and planning, PROFILE: raoul for review and verification, or PROFILE: arsene for authorized offensive security analysis.",
       "mode": "subagent",
@@ -283,7 +300,17 @@
         "skill": "allow",
         "bash": "allow",
         "webfetch": "allow",
-        "websearch": "allow"
+        "websearch": "allow",
+        "external_directory": {
+          "*": "allow",
+          "~/.ssh/*": "deny",
+          "~/.gnupg/*": "deny",
+          "~/.aws/*": "deny",
+          "~/.config/gh/*": "deny",
+          "~/.secrets/*": "deny",
+          "~/.codex/*": "deny",
+          "~/.local/share/opencode/*": "deny"
+        }
       }
     },
     "analyst-anthropic": {
@@ -303,7 +330,47 @@
         "skill": "allow",
         "bash": "allow",
         "webfetch": "allow",
-        "websearch": "allow"
+        "websearch": "allow",
+        "external_directory": {
+          "*": "allow",
+          "~/.ssh/*": "deny",
+          "~/.gnupg/*": "deny",
+          "~/.aws/*": "deny",
+          "~/.config/gh/*": "deny",
+          "~/.secrets/*": "deny",
+          "~/.codex/*": "deny",
+          "~/.local/share/opencode/*": "deny"
+        }
+      }
+    },
+    "analyst-open": {
+      "description": "Read-only DeepSeek V4 Flash analyst on OpenCode Zen's free route. Delegate with PROFILE: constance for research and planning, PROFILE: raoul for review and verification, or PROFILE: arsene for authorized offensive security analysis.",
+      "mode": "subagent",
+      "hidden": true,
+      "model": "opencode/deepseek-v4-flash-free",
+      "variant": "low",
+      "prompt": "{file:./prompts/analyst.md}",
+      "permission": {
+        "*": "deny",
+        "read": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "list": "allow",
+        "lsp": "allow",
+        "skill": "allow",
+        "bash": "allow",
+        "webfetch": "allow",
+        "websearch": "allow",
+        "external_directory": {
+          "*": "allow",
+          "~/.ssh/*": "deny",
+          "~/.gnupg/*": "deny",
+          "~/.aws/*": "deny",
+          "~/.config/gh/*": "deny",
+          "~/.secrets/*": "deny",
+          "~/.codex/*": "deny",
+          "~/.local/share/opencode/*": "deny"
+        }
       }
     },
     "worker-openai": {
@@ -324,7 +391,17 @@
         "edit": "allow",
         "bash": "allow",
         "webfetch": "allow",
-        "websearch": "allow"
+        "websearch": "allow",
+        "external_directory": {
+          "*": "allow",
+          "~/.ssh/*": "deny",
+          "~/.gnupg/*": "deny",
+          "~/.aws/*": "deny",
+          "~/.config/gh/*": "deny",
+          "~/.secrets/*": "deny",
+          "~/.codex/*": "deny",
+          "~/.local/share/opencode/*": "deny"
+        }
       }
     },
     "worker-anthropic": {
@@ -345,7 +422,48 @@
         "edit": "allow",
         "bash": "allow",
         "webfetch": "allow",
-        "websearch": "allow"
+        "websearch": "allow",
+        "external_directory": {
+          "*": "allow",
+          "~/.ssh/*": "deny",
+          "~/.gnupg/*": "deny",
+          "~/.aws/*": "deny",
+          "~/.config/gh/*": "deny",
+          "~/.secrets/*": "deny",
+          "~/.codex/*": "deny",
+          "~/.local/share/opencode/*": "deny"
+        }
+      }
+    },
+    "worker-open": {
+      "description": "Ines on DeepSeek V4 Flash through OpenCode Zen's free route. Implements one cohesive change or performs explicitly requested Git integration; never share files, the Git index, or mutable resources with another worker.",
+      "mode": "subagent",
+      "hidden": true,
+      "model": "opencode/deepseek-v4-flash-free",
+      "variant": "high",
+      "prompt": "{file:./prompts/worker.md}",
+      "permission": {
+        "*": "deny",
+        "read": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "list": "allow",
+        "lsp": "allow",
+        "skill": "allow",
+        "edit": "allow",
+        "bash": "allow",
+        "webfetch": "allow",
+        "websearch": "allow",
+        "external_directory": {
+          "*": "allow",
+          "~/.ssh/*": "deny",
+          "~/.gnupg/*": "deny",
+          "~/.aws/*": "deny",
+          "~/.config/gh/*": "deny",
+          "~/.secrets/*": "deny",
+          "~/.codex/*": "deny",
+          "~/.local/share/opencode/*": "deny"
+        }
       }
     },
 
