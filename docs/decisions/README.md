@@ -24,6 +24,7 @@ bootstrap script works until one has actually been built and tested.
 | [0012](0012-machine-local-instructions.md) | Keeping machine-specific agent instructions out of the repository |
 | [0013](0013-image-generation-tool.md) | Constraining delegated image generation through Codex |
 | [0014](0014-terminal-image-preview.md) | Rendering bounded local image previews through Chafa |
+| [0015](0015-agent-git-identity-and-transport.md) | Separating agent commit identity and GitHub transport |
 
 ## Status values
 

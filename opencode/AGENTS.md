@@ -124,6 +124,18 @@ un conflit lors de la réapplication finale. Pour une opération d'historique,
 préfère `git fetch` suivi d'un rebase explicite, et contrôle `git status` avant
 et après.
 
+## Identité et signature des commits d'agent
+
+Tout commit produit via opencode sépare author et committer : l'author reste l'humain responsable du dépôt (`ethicnology`), le committer devient une identité agent dédiée (`ethicnology-agent`), qui trace le fait qu'une délégation a produit ce commit. Cela s'applique à tout commit passant par opencode, y compris ceux faits par l'orchestrateur primaire lui-même : pour qu'un commit humain reste signé par la YubiKey, il faut le faire depuis son propre terminal, en dehors d'opencode.
+
+Les commits d'agent ne sont donc jamais signés par défaut. La signature devient un marqueur fiable dans les deux sens : un commit non signé signale qu'un agent l'a touché, un commit signé garantit qu'aucun agent ne l'a produit ni réécrit.
+
+Une signature explicite reste possible via `git -c commit.gpgsign=true commit ...`, mais uniquement sur demande explicite de l'utilisateur dans la conversation en cours ; préviens que cela déclenche une demande de contact physique sur la YubiKey.
+
+Un `rebase`, `amend` ou `fixup` exécuté par un agent rejoue les commits avec l'identité agent : il réécrit le committer de **tous** les commits rejoués et fait disparaître leurs signatures existantes, y compris celles que l'humain avait produites lui-même depuis son terminal. Ne laisse donc jamais un agent rebaser une branche dont des signatures doivent survivre.
+
+Côté serveur, une règle « Require signed commits » est par construction incompatible avec toute branche sur laquelle un agent pousse.
+
 ## Langue des contributions
 
 Nos échanges se font en français ; les artefacts publics, non. Code,
@@ -341,18 +353,23 @@ identifiant, suivie d'un `SIGWINCH` pour que l'interface repeigne la zone. Le
 shell d'un outil n'ayant pas de terminal de contrôle (`/dev/tty` → `ENXIO`), le
 tty se trouve en remontant aux processus ancêtres.
 
-## GitHub en lecture seule
+## GitHub : contribuer par fork
 
-Le token `gh` de cette machine est **volontairement** en lecture seule (PAT
-fine-grained sans droit d'écriture). Une mutation — `gh pr edit`, `gh api` en
-POST/PATCH, mutation GraphQL — échoue avec `Resource not accessible by
-personal access token` : ce n'est ni un défaut de configuration ni quelque
-chose à contourner. Prépare le contenu (titre, corps de PR, commentaire) dans
-un fichier et remets-le à l'utilisateur pour qu'il le colle lui-même.
+Le token `gh` de cette machine appartient au compte dédié `ethicnology-agent`, distinct du compte humain. Ce compte ne possède aucun dépôt, n'est membre d'aucune organisation et n'est collaborateur nulle part : il ne peut donc écrire que sur **ses propres forks**. C'est cet isolement, et non le scope du token, qui borne le rayon d'action d'un agent. Ne demande jamais à être ajouté comme collaborateur sur un dépôt, et n'accepte aucune invitation : cela supprimerait la seule garantie du montage.
 
-Bonus si un jour le token écrit : `gh pr edit` échoue sur la requête GraphQL
-Projects-classic dépréciée — passer par une mutation `updatePullRequest`
-directe via `gh api graphql`.
+Le mode de contribution est donc celui de l'open source classique — forker, pousser une branche sur le fork, ouvrir une pull request vers l'upstream. Ne tente jamais de pousser directement sur une branche d'un dépôt upstream : l'échec est normal et attendu, ce n'est pas un défaut de configuration à contourner.
+
+```
+gh repo fork --remote-name agent          # garde `origin` intact
+git push agent ma-branche
+gh pr create --repo OWNER/REPO --base main --head ethicnology-agent:ma-branche
+```
+
+Le trafic git des agents est réécrit en HTTPS et authentifié par le token du compte agent (voir `plugins/git-identity.ts`). Cette réécriture couvre les URL SCP (`git@github.com:...`) et SSH explicites (`ssh://git@github.com/...`). Ne reconfigure pas les remotes, ne bascule pas une URL en SSH et n'exporte pas `GH_TOKEN` : ces formes SSH s'authentifieraient comme l'humain, avec ses privilèges.
+
+`gh pr edit` échoue sur une requête GraphQL Projects-classic dépréciée, indépendamment des droits du token ; passe par une mutation `updatePullRequest` directe via `gh api graphql`.
+
+Une PR ouverte depuis un fork peut exiger l'approbation manuelle d'un mainteneur avant que la CI ne démarre. C'est le fonctionnement normal côté upstream : signale-le à l'utilisateur, n'essaie pas de le contourner.
 
 ## Secrets
 
@@ -364,7 +381,7 @@ de commit.
 Les commits sont signés par une clé de sécurité : un contact physique est
 demandé dans cet environnement. Un amend ou rebase peut resigner plusieurs
 commits et demander plusieurs contacts. Regroupe les opérations plutôt que de
-multiplier les sollicitations.
+multiplier les sollicitations. Ce paragraphe ne concerne que le cas de la signature explicite : les commits d'agent ne sont plus signés par défaut (voir « Identité et signature des commits d'agent »).
 
 Pour déterminer si un commit SSH est signé, ne te fie jamais uniquement à
 `git log --show-signature` : il peut afficher `No signature` quand la
