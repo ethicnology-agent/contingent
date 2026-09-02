@@ -1,0 +1,8 @@
+{
+  "id": "seeded-contract-bug",
+  "test": "test.mjs",
+  "contract": "normalizeScore returns a number in the inclusive range 0..100",
+  "phases": ["changed"],
+  "changedFiles": {"changed": ["score.mjs", "test.mjs"]},
+  "expected": {"changed": {"file": "score.mjs", "symbol": "normalizeScore", "line": 1}}
+}

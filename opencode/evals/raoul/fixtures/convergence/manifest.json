@@ -1,0 +1,11 @@
+{
+  "id": "convergence",
+  "test": "test.mjs",
+  "contract": "normalizeCount returns a non-negative integer",
+  "phases": ["broken", "fixed"],
+  "changedFiles": {
+    "broken": ["count.mjs", "test.mjs"],
+    "fixed": ["count.mjs", "test.mjs"]
+  },
+  "expected": {"broken": {"file": "count.mjs", "symbol": "normalizeCount", "line": 1}}
+}

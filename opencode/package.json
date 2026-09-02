@@ -5,7 +5,10 @@
     "node": ">=22.22.2"
   },
   "scripts": {
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "eval:raoul": "node evals/raoul/cli.mjs --mode deterministic",
+    "eval:raoul:live": "node evals/raoul/cli.mjs --mode live",
+    "test:evals": "node --test evals/raoul/*.test.mjs"
   },
   "dependencies": {
     "@opencode-ai/plugin": "1.18.18"

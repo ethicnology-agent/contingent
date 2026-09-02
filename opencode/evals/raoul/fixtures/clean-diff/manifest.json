@@ -1,0 +1,7 @@
+{
+  "id": "clean-diff",
+  "test": "test.mjs",
+  "contract": "formatTitle preserves the requested title casing",
+  "phases": ["changed"],
+  "changedFiles": {"changed": ["title.mjs", "test.mjs"]}
+}

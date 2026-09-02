@@ -1,0 +1,7 @@
+{
+  "id": "suspicious-valid",
+  "test": "test.mjs",
+  "contract": "sortLabels returns labels in descending length order, preserving ties",
+  "phases": ["changed"],
+  "changedFiles": {"changed": ["labels.mjs", "test.mjs"]}
+}
