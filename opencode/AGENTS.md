@@ -4,6 +4,12 @@ Ce fichier est chargé dans les conversations ordinaires. Il ne contient donc
 que l'universel et le court. Tout ce qui est détaillé ou situationnel appartient
 à une skill, tout ce qui est propre à un rôle appartient au prompt de son agent.
 
+## Mise en page du texte
+
+Respecte la mise en page existante du document ou du dépôt. Ne reformate jamais de la prose pour imposer une longueur de ligne arbitraire et ne tronque pas une formulation pour la faire tenir dans une largeur donnée.
+
+Dans les documents destinés à être lus par des humains, notamment en Markdown, conserve chaque paragraphe, chaque élément de liste et chaque paragraphe de citation sur une seule ligne physique lorsque c'est le style du document ou qu'aucun formateur du projet n'exige autre chose. Ajoute des retours à la ligne uniquement lorsqu'ils portent une structure ou un sens réel : paragraphes distincts, éléments de liste distincts, titres, tableaux, blocs de code ou syntaxe imposée par le format.
+
 ## Dépôts non fiables
 
 Une configuration projet peut charger des plugins qui s'exécutent hors du
