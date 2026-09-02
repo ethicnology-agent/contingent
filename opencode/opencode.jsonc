@@ -198,6 +198,8 @@
     "doom_loop": "deny",
     "imagegen": "ask",
     "image-display": "ask",
+    "image-warp": "ask",
+    "image-warp-close": "ask",
     // external_directory gate egalement les chemins detectes dans de nombreuses
     // commandes shell. Les repertoires entiers sont refuses car le controle se
     // fait sur un glob de parent, pas necessairement sur le fichier exact.

@@ -3,7 +3,9 @@
 - Status: Accepted
 - Date: 2026-08-13
 - Owners: ethicnology
-- Applies to: `opencode/tools/image-display.ts`, `opencode/opencode.jsonc`
+- Applies to: `opencode/tools/image-display.ts`, `opencode/tools/image-warp.ts`,
+  `opencode/tools/image-warp-close.ts`, `opencode/lib/kitty-graphics.ts`,
+  `opencode/opencode.jsonc`
 
 ## Problem
 
@@ -14,8 +16,8 @@ Kitty-only, unlicensed, lightly maintained, and rejects Warp explicitly.
 
 ## Decision
 
-Expose a local `image-display` tool backed by the Debian-packaged Chafa CLI.
-The tool:
+Expose local `image-display`, `image-warp`, and `image-warp-close` tools. The
+tools:
 
 - accepts only regular files canonically located in the active worktree or
   `~/debian/generated-images`;
@@ -25,8 +27,15 @@ The tool:
   graphics protocol, while offering an explicit `symbols` ANSI/Unicode
   fallback;
 - responds to OpenCode cancellation, requires confirmation for primary agents,
-  and is denied to the read-only `plan` agent;
+  and are denied to the read-only analyst and worker agents;
 - never sends image bytes over the network and adds no npm runtime dependency.
+
+`image-warp` writes bounded PNG Kitty graphics sequences to the discovered
+terminal and keeps one placement above the TUI. `image-warp-close` deletes that
+placement and sends `SIGWINCH` so the interface repaints. Warp supports the
+Kitty graphics transport but not iTerm2 inline images. All four local image
+tools (`imagegen`, `image-display`, `image-warp`, and `image-warp-close`) have
+explicit global `ask` permissions in OpenCode.
 
 Chafa is a machine dependency, installed separately from this configuration.
 
@@ -67,11 +76,12 @@ Negative / known limits:
 ## Evidence
 
 - Debian 13 installed Chafa 1.14.5 from the signed distribution package.
-- `npm run typecheck` validates the tool against
-  `@opencode-ai/plugin@1.18.16`.
+- `npm run typecheck` validates the tools against
+  `@opencode-ai/plugin@1.18.26`.
 - Chafa successfully decoded the generated Prompt PNG and rendered it in
   `symbols` mode under Warp over SSH/Lima.
-- `opencode debug config` accepted the dedicated permission entries.
+- The static coherence check accepts the dedicated permission entries for all
+  three preview tools.
 - `tests/check-coherence.py` passes with the installed symlinked config.
 
 ## Revisit when

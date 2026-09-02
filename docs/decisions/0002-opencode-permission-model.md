@@ -15,25 +15,26 @@ is no separation between "reasoning about code" and "changing code".
 
 ## Decision
 
-Use an allow-by-default posture for flagship primary agents, which are expected
+Use an allow-by-default posture for the three flagship primary agents
+(`codex`, `claude`, and `open`), which are expected
 to implement complete tasks without stopping for routine approvals. Constrain
 specialized roles explicitly, evaluated with OpenCode's documented
 last-match-wins rule (`"*"` first, specific rules after):
 
-- `gpt`, `opus`, and `kimi`: full in-worktree `edit`/`bash`; `doom_loop` is
-  denied and `task` is restricted to the cross-provider explore and worker
-  agents named for that primary.
-- `plan`: `bash` and the mutating `imagegen` tool are denied; `edit` is denied
-  except for plan files; only the read-only OpenAI explorer may be delegated.
-- `explore` / `explore-openai`: wildcard deny followed by read-only tools. They
-  cannot edit, execute shell commands, ask questions, generate images, or
-  launch subagents.
-- `worker-openai` / `worker-anthropic`: wildcard deny followed by the tools
-  needed for a bounded implementation (`read`, search, LSP, skills, `edit`,
-  `bash`). They cannot ask questions, generate images, or launch subagents.
-- Global `imagegen: ask` keeps image generation human-approved for capable
-  primaries. The explicit `plan` denial prevents an approval from turning plan
-  mode into an out-of-tree writer.
+- `codex`, `claude`, and `open`: full in-worktree `edit`/`bash`; `doom_loop` is
+  denied and `task` is restricted to the analyst and worker agents named for
+  that primary.
+- `analyst-openai`, `analyst-anthropic`, and `analyst-open`, plus their matching
+  `worker-*` agents: wildcard deny followed by the tools needed for their
+  bounded role. Their wildcard deny covers every local image tool (`imagegen`,
+  `image-display`, `image-warp`, and `image-warp-close`) unless a future
+  explicit tool rule overrides it.
+- The built-in `build`, `general`, `plan`, `explore`, and `scout` profiles are
+  disabled; they are not active roles and are not part of the permission
+  contract.
+- Global `imagegen`, `image-display`, `image-warp`, and `image-warp-close`
+  permissions are `ask`, keeping local image operations human-approved for
+  capable primaries.
 - Global `external_directory` allows ordinary work but hard-denies credential
   roots: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.config/gh`, `~/.secrets`,
   `~/.codex`, and OpenCode's own state directory.
@@ -59,9 +60,9 @@ it does not replace a real sandbox.
 ## Consequences
 
 Positive: primary agents can complete implementation work autonomously, while a
-compromised or careless `plan`/`explore` turn cannot silently mutate the repo or
-execute shell commands. Workers have enough tools to implement their delegation
-but cannot recursively fan out.
+compromised or careless read-only analyst cannot silently mutate the repo,
+execute shell commands, or invoke local image tools. Workers have enough tools
+to implement their delegation but cannot recursively fan out.
 
 Negative / known limits:
 
@@ -88,14 +89,16 @@ Negative / known limits:
 
 ## Evidence
 
-- `opencode debug agent` was run against the installed OpenCode 1.18.16 for the
-  current primary and worker agents. Primaries expose `task`; workers expose
+- The current configuration defines OpenCode 1.18.26-compatible primary,
+  analyst, and worker profiles. Primaries expose `task`; workers expose
   `read`/search/LSP/skill/edit/bash but not `task`, `question`, or `imagegen`.
-- The same command confirmed `plan` resolves `bash: deny`, `imagegen: deny`,
-  and only its narrow plan-file edit allowances.
+- The built-in `plan` profile is disabled, and the three analyst and three worker
+  profiles resolve every local image tool to `deny` through their wildcard rule
+  in the static coherence check below.
 - `tests/check-coherence.py` schema-validates the config and now asserts that
-  every local custom tool is globally `ask`/`deny`, denied to `plan`, and that
-  `~/.secrets/*` remains denied.
+  every local custom tool is globally `ask`/`deny`, while active analyst and
+  worker profiles resolve each one to `deny` (specific rules take precedence
+  over `*`).
 - **Every `deny` rule was exercised for real**, which had never been done: the
   same log showed 22 708 `bash`, 2 024 `read` and 1 171 `external_directory`
   evaluations with *zero* `deny` outcomes, meaning the security-relevant half

@@ -249,20 +249,42 @@ if isinstance(regles_ed, dict):
                         f"agent '{nom}': {cle} allow sur '{motif}' n'est pas annule par external_directory",
                          "" if effective != "deny" else "external_directory refuse ce chemin : regle morte")
 
-# Les outils locaux qui ecrivent hors du depot ne doivent pas contourner les
-# roles en lecture seule. Leur permission globale demande une validation
-# humaine, et plan les refuse sans exception.
+# Les outils locaux qui écrivent hors du dépôt ne doivent pas contourner les
+# rôles spécialisés en lecture seule. Leur permission globale demande une
+# validation humaine. Les built-ins désactivés ne sont pas des agents actifs:
+# leur configuration résiduelle ne participe donc pas à cette vérification.
 tools_dir = ROOT / "opencode" / "tools"
+def permission_action(permission: object, outil: str) -> object:
+    """Resolve the minimal OpenCode permission model: wildcard then override."""
+    if not isinstance(permission, dict):
+        return None
+    return permission.get(outil, permission.get("*"))
+
+
+agents = cfg.get("agent", {}) or {}
+active_specialized = {
+    nom: ag for nom, ag in agents.items()
+    if nom.startswith(("analyst-", "worker-")) and not ag.get("disable", False)
+}
 for ts_file in sorted(tools_dir.glob("*.ts")) if tools_dir.is_dir() else []:
     outil = ts_file.stem
     globale = (cfg.get("permission", {}) or {}).get(outil)
-    plan = (((cfg.get("agent", {}) or {}).get("plan", {}) or {})
-            .get("permission", {}) or {}).get(outil)
     verdict(globale in ("ask", "deny"),
             f"outil local '{outil}' soumis a permission globale",
             f"action actuelle: {globale!r}")
-    verdict(plan == "deny", f"agent plan refuse l'outil local '{outil}'",
-            f"action actuelle: {plan!r}")
+    for nom, ag in active_specialized.items():
+        permissions = (ag.get("permission", {}) or {})
+        verdict(permissions.get("*") == "deny",
+                f"agent '{nom}' a un wildcard deny pour '{outil}'",
+                f"action actuelle: {permissions.get('*')!r}")
+        effective = permission_action(permissions, outil)
+        if outil in permissions:
+            verdict(effective == permissions[outil],
+                    f"agent '{nom}' applique l'override de '{outil}'",
+                    f"action effective: {effective!r}")
+        else:
+            verdict(effective == "deny", f"agent '{nom}' refuse l'outil local '{outil}'",
+                    f"action effective: {effective!r}")
 
 # --- 4e. Les liens Markdown relatifs resolvent-ils ? ------------------------
 for md in sorted(ROOT.rglob("*.md")):
