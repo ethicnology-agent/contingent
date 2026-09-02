@@ -1,8 +1,8 @@
 {
   "private": true,
-  "packageManager": "npm@11.6.2",
+  "packageManager": "npm@12.0.2",
   "engines": {
-    "node": ">=22.22.2"
+    "node": "^24.20.0 || >=26.0.0"
   },
   "scripts": {
     "typecheck": "tsc",
@@ -11,10 +11,10 @@
     "test:evals": "node --test evals/raoul/*.test.mjs"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "1.18.18"
+    "@opencode-ai/plugin": "1.18.26"
   },
   "devDependencies": {
-    "@types/node": "24.12.2",
-    "typescript": "5.8.2"
+    "@types/node": "24.13.3",
+    "typescript": "7.0.2"
   }
 }

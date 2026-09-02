@@ -22,10 +22,11 @@ fine string-wise but would fail at the first real fallback attempt.
 
 ## Decision
 
-- Pin the Anthropic auth plugin to an explicit, reviewed version:
-  `@ex-machina/opencode-anthropic-auth@1.8.1`.
-- Keep `@opencode-ai/plugin` aligned to the actual installed OpenCode version,
-  bumped deliberately in its own commit, not silently. It is declared under
+- Pin the Anthropic auth plugin to the explicit, reviewed version:
+  `@ex-machina/opencode-anthropic-auth@1.8.2`.
+- Keep `@opencode-ai/plugin` aligned to the actual installed OpenCode version:
+  `@opencode-ai/plugin@1.18.26` and its transitive `@opencode-ai/sdk@1.18.26`.
+  bumped deliberately, not silently. It is declared under
   `dependencies` because the plugins import its types directly;
   `@opencode-ai/sdk` is not a direct entry at all — it arrives as a dependency
   of `@opencode-ai/plugin` and is pinned transitively by the lockfile, which
@@ -37,6 +38,8 @@ fine string-wise but would fail at the first real fallback attempt.
   version) to pass before any plugin change ships — not just `esbuild`
   syntax-only validation, which does not catch missing Node type
   declarations or unsound union types.
+- Pin the development toolchain to Node `24.20.0` LTS, npm `12.0.2`, TypeScript
+  `7.0.2`, and `@types/node` `24.13.3`.
 
 ## Alternatives considered
 
@@ -84,7 +87,7 @@ Negative:
 ## Evidence
 
 - The exact npm registry metadata for
-  `@opencode-ai/plugin@1.18.5`/`@opencode-ai/sdk@1.18.5` (dependency graph,
+  `@opencode-ai/plugin@1.18.26`/`@opencode-ai/sdk@1.18.26` (dependency graph,
   integrity hashes) was fetched directly from `registry.npmjs.org`, not
   guessed, and used to hand-align `package-lock.json` before confirming with
   a real `npm install --ignore-scripts`.
@@ -107,10 +110,8 @@ Negative:
   each step. `tests/check-coherence.py` now compares the pin against
   `opencode --version` so the next drift fails a check instead of waiting for
   a reader.
-- The pin was subsequently realigned from `1.18.16` to the installed OpenCode
-  `1.18.18` while adding a typed local tool. `npm install --ignore-scripts`
-  updated both plugin and SDK lock entries, `npm run typecheck` passed, and the
-  coherence check confirmed the binary/package versions match.
+- The pin is now aligned to installed OpenCode `1.18.26`; the plugin and SDK
+  lock entries and the development-tool pins are updated together.
 - `opencode.jsonc` was validated against the officially published JSON Schema
   (`https://opencode.ai/config.json`) after every change, not just visually
   inspected.

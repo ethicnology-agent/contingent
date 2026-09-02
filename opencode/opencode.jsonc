@@ -12,7 +12,7 @@
   // pour une demande de permission la metadata integrale (donc la commande
   // shell en entier). Inerte si WARP_CLI_AGENT_PROTOCOL_VERSION est absente.
   "plugin": [
-    "@ex-machina/opencode-anthropic-auth@1.8.1",
+    "@ex-machina/opencode-anthropic-auth@1.8.2",
     "@warp-dot-dev/opencode-warp@0.1.7"
   ],
   // Codex is the default orchestrator. Claude remains selectable when an
