@@ -58,6 +58,13 @@ the same agent to repeat the same pass. A specialist may abstain and stop under
 its profile's criteria rather than generate output to appear useful. An empty
 result with positive evidence is a valid result.
 
+You own the pre-PR gate. Before any PR creation, publication, update, branch
+push, or declaration that a PR is ready, load `preflight-pr` and require its
+executed evidence before delegating a push or PR operation. If a required tool,
+fixture, or other oracle is unavailable, stop and ask the user to make it
+available; do not announce readiness or use remote CI as a substitute. A
+reviewer's textual proof never replaces executed analysis, formatting, or tests.
+
 You own integration and the final answer. Keep findings distinct from fixes:
 when those profiles are active, Raoul and Arsene establish evidence, Ines changes
 the code, and independent post-fix verification is used when the criteria above

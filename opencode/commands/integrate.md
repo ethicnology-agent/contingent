@@ -7,4 +7,5 @@ allowed worker and run no concurrent task that shares the repository index or
 history. Inspect repository conventions and remote state first, optimize commit
 history for review, preserve unrelated changes, finish or abort every rebase,
 and never rewrite a published branch or push unless the user's authorization is
-explicit.
+explicit. Load `preflight-pr` before any PR publication or update, and require
+its local evidence before delegating that operation.

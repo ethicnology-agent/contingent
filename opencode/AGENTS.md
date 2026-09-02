@@ -218,6 +218,10 @@ N'affirme pas qu'une chose fonctionne sans l'avoir exécutée. Si tu ne peux pas
 la vérifier, dis-le explicitement plutôt que de la présenter comme acquise.
 Distingue toujours ce que tu as mesuré de ce que tu supposes.
 
+Avant toute création, publication ou mise à jour de PR, ou tout push d'une
+branche de PR, charge `preflight-pr`. Un outil requis absent bloque la
+publication ; la CI distante ne remplace jamais le préflight local.
+
 ### Convergence, abstention et bruit
 
 Un résultat vide accompagné d'éléments de vérification positifs est valide :

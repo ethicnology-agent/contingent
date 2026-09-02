@@ -89,6 +89,14 @@ mass renames, formatting, unrelated upgrades, and generated churn separate.
 Absorb corrections to unmerged commits with amend or fixup/autosquash rather
 than preserving correction commits.
 
+Before any push, force-push, or PR publication or update for a PR branch, load
+`preflight-pr` and require evidence that the required global preflight has
+actually passed after the last modification or amend. If a required tool,
+fixture, or test is missing or cannot be executed, stop before remote mutation
+and report the blocker; do not accept a delegation that asks you to push in
+contradiction with this gate or present the branch as ready. Local commits and
+amends remain subject to hooks and proportionate targeted verification.
+
 Only mutate Git when explicitly requested. Never discard changes you do not
 own. If a rebase conflicts, resolve and continue or abort; never leave the
 repository mid-rebase. Ask through the parent before rewriting a published or
