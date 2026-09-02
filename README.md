@@ -44,11 +44,11 @@ tests/          Static checks: does the config say what it does?
 
 ## Manual install
 
-Requires Git ≥ 2.44, Python ≥ 3.10, an OpenSSH client, and OpenCode ≥ 1.18.5.
+Requires Git ≥ 2.44, Python ≥ 3.10, an OpenSSH client, and OpenCode 1.18.26.
 [Chafa](https://hpjansson.org/chafa/) is required only for inline image
 previews (`sudo apt install chafa` on Debian).
-[rtk](https://github.com/rtk-ai/rtk) ≥ 0.23.0 is optional: with it on
-`PATH`, shell commands are rewritten to filter their output
+[rtk](https://github.com/rtk-ai/rtk) 0.47.0 is optional: the plugin prefers
+`$HOME/.local/bin/rtk` and falls back to `PATH`; shell commands are rewritten to filter their output
 ([0010](docs/decisions/0010-rtk-command-rewriting.md)); without it, the plugin
 disables itself.
 

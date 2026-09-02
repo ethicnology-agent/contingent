@@ -23,7 +23,7 @@ dans le dépôt `contingent`.
 
 ## Réécrit automatiquement
 
-Mesuré avec rtk 0.43.0. La colonne de droite est ce qui s'exécute réellement.
+Mesuré avec rtk 0.47.0. La colonne de droite est ce qui s'exécute réellement.
 
 | tu écris | s'exécute |
 |---|---|
@@ -95,5 +95,8 @@ Quand une sortie filtrée te paraît incomplète, relance avec `rtk proxy` avant
 conclure quoi que ce soit sur le code. C'est le premier réflexe : ne débogue pas
 un problème qui est peut-être un artefact de filtrage.
 
-Le plugin se désactive tout seul si `rtk` est absent du `PATH` — il ne fait
-alors qu'un `warn` au démarrage, et aucune commande n'est réécrite.
+Le plugin essaie d'abord `$HOME/.local/bin/rtk`, puis `rtk` via `PATH`. Si aucun
+exécutable ne fonctionne, il se désactive proprement avec un `warn` au démarrage
+et aucune commande n'est réécrite. Un `opencode debug agent codex` avec un PATH
+minimal a chargé le plugin sans warning RTK; cela ne prouve pas une réécriture
+live de commande.

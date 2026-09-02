@@ -3,7 +3,7 @@
 - Status: Proposed
 - Date: 2026-07-27
 - Owners: ethicnology
-- Applies to: `opencode/plugins/rtk.ts`, `opencode/AGENTS.md`, `skills/rtk/`
+- Applies to: `opencode/plugins/rtk.ts`, `opencode/plugins/git-identity.ts`, `opencode/AGENTS.md`, `skills/rtk/`
 
 ## Problem
 
@@ -82,9 +82,10 @@ Negative / known limits, all measured (see Evidence):
   registry.
 - **rtk's percentage claims are not reproduced here.** They are upstream
   marketing figures; no token measurement was made in this repo.
-- The plugin disables itself when `rtk` is not in `PATH`, so the config stays
-  portable to a machine without it — but then no filtering happens and nothing
-  says so beyond one `warn` line at startup.
+- The plugin prefers `$HOME/.local/bin/rtk` when that executable works, then
+  falls back to `rtk` resolved through `PATH`; if neither works it disables
+  itself with one warning. The Git identity plugin keeps `$HOME/.local/bin` at
+  the front of agent-shell `PATH`, preserving access to user-local tools.
 
 ## Evidence
 
@@ -95,7 +96,7 @@ Negative / known limits, all measured (see Evidence):
   place, so `b` is already rewritten when the prompt is shown. The user
   therefore approves the command that will actually run. Source reading, not a
   runtime measurement.
-- **Rewrite table**, obtained by running `rtk rewrite` (rtk 0.43.0) on each
+- **Rewrite table**, obtained by running `rtk rewrite` (rtk 0.47.0) on each
   command:
 
   | input | output |
@@ -121,13 +122,17 @@ Negative / known limits, all measured (see Evidence):
 - **`rtk tsc` does not fall back to a project-local binary**: with an executable
   `node_modules/.bin/tsc` present and no `tsc` on `PATH`, it exits 1 with
   `Failed to spawn process: No such file or directory`.
+- **Plugin startup with a minimal `PATH`**, observed with `opencode debug agent
+  codex`: the plugin loaded without an RTK warning when the user-local
+  executable was available. This verifies startup selection, not every live
+  command rewrite end to end.
 
 ## Revisit when
 
-- **The plugin is observed rewriting a command in a live session.** Everything
-  above tests `rtk rewrite` and OpenCode's hook ordering separately; the two
-  have not been observed working together end to end. The record stays
-  `Proposed` until they are.
+- **The plugin is observed rewriting a command in a live session.** The current
+  evidence verifies startup selection and the rewrite CLI separately; a full
+  live command rewrite has not been observed. The record stays `Proposed` until
+  it is.
 - rtk's registry starts covering user-defined Git aliases, which would remove
   the largest gap for this repo.
 - OpenCode changes when the permission `ask` runs relative to
